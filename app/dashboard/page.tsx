@@ -1,29 +1,78 @@
 "use client";
 
-import { Logo } from "@/components/brand/logo";
-import { Button } from "@/components/ui/button";
-import { useAuth } from "@/lib/auth/auth-context";
+import { useState } from "react";
+import { AccountCards } from "@/components/dashboard/account-cards";
+import { AdjustBalanceDialog } from "@/components/dashboard/adjust-balance-dialog";
+import { AllocationChart } from "@/components/dashboard/allocation-chart";
+import { BudgetPulse } from "@/components/dashboard/budget-pulse";
+import { ExpenseChart } from "@/components/dashboard/expense-chart";
+import { MonthVerdict } from "@/components/dashboard/month-verdict";
+import { Section } from "@/components/dashboard/section";
+import { allGoalProgress, monthElapsed, rollUpGoals } from "@/lib/budget/analytics";
+import { useBudgetContext } from "@/lib/budget/budget-context";
+import { formatMonthLabel, formatMoney } from "@/lib/budget/format";
+import type { AccountKind } from "@/lib/budget/types";
 
-export default function DashboardPage() {
-  const { user, logOut } = useAuth();
+export default function OverviewPage() {
+  const {
+    uid,
+    accounts,
+    openingAccounts,
+    transactions,
+    goals,
+    totalCents,
+    openingTotalCents,
+    loading,
+    goalsLoading,
+    monthStart,
+  } = useBudgetContext();
+  const [adjusting, setAdjusting] = useState<AccountKind | null>(null);
+
+  const monthLabel = formatMonthLabel(monthStart);
+  const rollup = rollUpGoals(
+    allGoalProgress(goals, transactions, monthElapsed(monthStart)),
+  );
 
   return (
-    <div className="flex flex-1 flex-col">
-      <header className="border-b border-border">
-        <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between px-6">
-          <Logo href="/dashboard" />
-          <Button variant="outline" size="sm" onClick={logOut}>
-            Log out
-          </Button>
-        </div>
-      </header>
+    <>
+      {/* Accounts come first: "how much have I got?" is the question people
+          open the app with, and everything below is commentary on it. */}
+      <Section
+        title="Your accounts"
+        subtitle={`${formatMoney(totalCents)} at the end of ${monthLabel}, carried in from ${formatMoney(
+          openingTotalCents,
+        )}.`}
+      >
+        <AccountCards
+          accounts={accounts}
+          openingAccounts={openingAccounts}
+          transactions={transactions}
+          onAdjust={setAdjusting}
+        />
+        <AllocationChart accounts={accounts} />
+      </Section>
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-16">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Welcome{user?.displayName ? `, ${user.displayName.split(" ")[0]}` : ""}.
-        </h1>
-        <p className="mt-2 text-sm text-muted">Signed in as {user?.email}.</p>
-      </main>
-    </div>
+      <Section
+        divided
+        title={`How ${monthLabel} is going`}
+        subtitle="The month you're viewing, in words first."
+      >
+        <MonthVerdict transactions={transactions} monthLabel={monthLabel} />
+        <BudgetPulse rollup={rollup} loading={goalsLoading} />
+        <ExpenseChart transactions={transactions} loading={loading} />
+      </Section>
+
+      {uid && adjusting ? (
+        <AdjustBalanceDialog
+          key={adjusting}
+          uid={uid}
+          account={adjusting}
+          currentCents={accounts[adjusting].balanceCents}
+          monthStart={monthStart}
+          open
+          onClose={() => setAdjusting(null)}
+        />
+      ) : null}
+    </>
   );
 }
