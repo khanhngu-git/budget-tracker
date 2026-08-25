@@ -1,12 +1,21 @@
+import Link from "next/link";
+import { Logo } from "@/components/brand/logo";
 import { RedirectIfAuthed } from "@/components/auth/route-guard";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <RedirectIfAuthed>
-      <div className="flex flex-1 items-center justify-center bg-zinc-50 px-4 py-12 dark:bg-black">
-        <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="flex flex-1 flex-col items-center justify-center gap-8 bg-surface-muted px-4 py-14">
+        <Logo />
+        <div className="w-full max-w-sm rounded-2xl border border-border bg-surface p-8">
           {children}
         </div>
+        <Link
+          href="/"
+          className="text-sm text-muted underline-offset-4 hover:text-foreground hover:underline"
+        >
+          Back to home
+        </Link>
       </div>
     </RedirectIfAuthed>
   );

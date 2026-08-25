@@ -6,23 +6,33 @@ type AuthFieldProps = {
   required?: boolean;
   placeholder?: string;
   minLength?: number;
+  disabled?: boolean;
 };
 
 export function AuthField({ id, label, ...inputProps }: AuthFieldProps) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label
-        htmlFor={id}
-        className="text-sm font-medium text-zinc-700 dark:text-zinc-300"
-      >
+      <label htmlFor={id} className="text-sm font-medium text-foreground">
         {label}
       </label>
       <input
         id={id}
         name={id}
-        className="h-11 rounded-lg border border-zinc-300 bg-white px-3 text-base text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-900 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-100"
+        className="h-11 rounded-lg border border-border bg-surface px-3 text-[0.9375rem] text-foreground transition-colors placeholder:text-muted/70 hover:border-muted/50 disabled:opacity-60"
         {...inputProps}
       />
     </div>
+  );
+}
+
+export function FormError({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <p
+      role="alert"
+      className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
+    >
+      {message}
+    </p>
   );
 }

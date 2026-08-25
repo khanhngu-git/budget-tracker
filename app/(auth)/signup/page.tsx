@@ -8,13 +8,11 @@ export const metadata: Metadata = {
 export default function SignupPage() {
   return (
     <>
-      <header className="mb-6 flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+      <header className="mb-6 flex flex-col gap-1.5">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">
           Create your account
         </h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Start tracking your budget in a minute.
-        </p>
+        <p className="text-sm text-muted">Free to start. No card required.</p>
       </header>
       <SignupForm />
     </>

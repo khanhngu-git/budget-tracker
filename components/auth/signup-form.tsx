@@ -5,11 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
 import { authErrorMessage } from "@/lib/auth/errors";
-import { AuthField } from "./auth-field";
-import { SubmitButton } from "./submit-button";
+import { Button } from "@/components/ui/button";
+import { AuthField, FormError } from "./auth-field";
+import { GoogleButton, OrDivider } from "./google-button";
 
 export function SignupForm() {
-  const { signUp } = useAuth();
+  const { signUp, signInWithGoogle } = useAuth();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -41,63 +42,84 @@ export function SignupForm() {
     }
   }
 
+  async function handleGoogle() {
+    setError(null);
+    setPending(true);
+    try {
+      await signInWithGoogle();
+      router.replace("/dashboard");
+    } catch (caught) {
+      setError(authErrorMessage(caught));
+      setPending(false);
+    }
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-      <AuthField
-        id="name"
-        label="Name"
-        type="text"
-        autoComplete="name"
-        placeholder="Alex Doe"
-        required
-      />
-      <AuthField
-        id="email"
-        label="Email"
-        type="email"
-        autoComplete="email"
-        placeholder="you@example.com"
-        required
-      />
-      <AuthField
-        id="password"
-        label="Password"
-        type="password"
-        autoComplete="new-password"
-        placeholder="At least 6 characters"
-        minLength={6}
-        required
-      />
-      <AuthField
-        id="confirmPassword"
-        label="Confirm password"
-        type="password"
-        autoComplete="new-password"
-        placeholder="Re-enter your password"
-        minLength={6}
-        required
+    <div className="flex flex-col gap-5">
+      <GoogleButton
+        onClick={handleGoogle}
+        disabled={pending}
+        label="Sign up with Google"
       />
 
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-300"
-        >
-          {error}
-        </p>
-      ) : null}
+      <OrDivider />
 
-      <SubmitButton pending={pending}>Create account</SubmitButton>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+        <AuthField
+          id="name"
+          label="Name"
+          type="text"
+          autoComplete="name"
+          placeholder="Alex Doe"
+          disabled={pending}
+          required
+        />
+        <AuthField
+          id="email"
+          label="Email"
+          type="email"
+          autoComplete="email"
+          placeholder="you@example.com"
+          disabled={pending}
+          required
+        />
+        <AuthField
+          id="password"
+          label="Password"
+          type="password"
+          autoComplete="new-password"
+          placeholder="At least 6 characters"
+          minLength={6}
+          disabled={pending}
+          required
+        />
+        <AuthField
+          id="confirmPassword"
+          label="Confirm password"
+          type="password"
+          autoComplete="new-password"
+          placeholder="Re-enter your password"
+          minLength={6}
+          disabled={pending}
+          required
+        />
 
-      <p className="text-center text-sm text-zinc-600 dark:text-zinc-400">
+        <FormError message={error} />
+
+        <Button type="submit" disabled={pending} className="mt-1 w-full">
+          {pending ? "Creating account…" : "Create account"}
+        </Button>
+      </form>
+
+      <p className="text-center text-sm text-muted">
         Already have an account?{" "}
         <Link
           href="/login"
-          className="font-medium text-zinc-900 underline underline-offset-4 dark:text-zinc-50"
+          className="font-medium text-foreground underline underline-offset-4"
         >
           Log in
         </Link>
       </p>
-    </form>
+    </div>
   );
 }

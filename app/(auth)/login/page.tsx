@@ -8,13 +8,11 @@ export const metadata: Metadata = {
 export default function LoginPage() {
   return (
     <>
-      <header className="mb-6 flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+      <header className="mb-6 flex flex-col gap-1.5">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">
           Welcome back
         </h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Log in to your budget.
-        </p>
+        <p className="text-sm text-muted">Log in to pick up where you left off.</p>
       </header>
       <LoginForm />
     </>

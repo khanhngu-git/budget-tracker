@@ -14,12 +14,28 @@ const MESSAGES: Record<string, string> = {
   "auth/too-many-requests": "Too many attempts. Try again in a few minutes.",
   "auth/network-request-failed": "Network error. Check your connection and try again.",
   "auth/operation-not-allowed":
-    "Email/password sign-in isn't enabled for this Firebase project.",
+    "That sign-in method isn't enabled for this Firebase project.",
+  // Google popup flow.
+  "auth/popup-closed-by-user": "",
+  "auth/cancelled-popup-request": "",
+  "auth/user-cancelled": "",
+  "auth/popup-blocked":
+    "Your browser blocked the sign-in popup. Allow popups and try again.",
+  "auth/unauthorized-domain":
+    "This domain isn't authorized for Google sign-in in your Firebase project.",
+  "auth/account-exists-with-different-credential":
+    "That email is already registered with a different sign-in method.",
 };
 
-export function authErrorMessage(error: unknown): string {
+/**
+ * Human-readable message for an auth failure, or `null` when the failure was
+ * the user deliberately backing out (a dismissed popup) and needs no message.
+ */
+export function authErrorMessage(error: unknown): string | null {
   if (error instanceof FirebaseError) {
-    return MESSAGES[error.code] ?? "Something went wrong. Please try again.";
+    const message = MESSAGES[error.code];
+    if (message === "") return null;
+    return message ?? "Something went wrong. Please try again.";
   }
   return "Something went wrong. Please try again.";
 }
