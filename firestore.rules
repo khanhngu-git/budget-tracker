@@ -1,0 +1,59 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // A user owns everything under their own /users/{uid} document and nothing
+    // else. This is the real access control for the app: the client SDK talks
+    // to Firestore directly, so these rules — not the UI — are what stop one
+    // user reading another's money.
+    match /users/{userId} {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == userId;
+      }
+
+      allow read, write: if isOwner();
+
+      match /accounts/{accountId} {
+        allow read: if isOwner();
+        allow write: if isOwner()
+                     && request.resource.data.balanceCents is int;
+      }
+
+      // Goals: what the user means to earn, put away, invest, or stay under in
+      // one particular month. Each month keeps its own plan, so August's goals
+      // are separate documents from July's.
+      match /budgets/{monthKey}/goals/{goalId} {
+        allow read: if isOwner();
+        // A delete carries no request.resource, so it's allowed on ownership
+        // alone; a write has to be a positive integer against a known scope.
+        allow create, update: if isOwner()
+                              && request.resource.data.amountCents is int
+                              && request.resource.data.amountCents > 0
+                              && request.resource.data.scope in
+                                 ['income', 'savings', 'investments', 'expense'];
+        allow delete: if isOwner();
+      }
+
+      // The build before month-scoped plans kept goals directly here. Read and
+      // delete only: the app rehomes them into the current month once, and
+      // nothing writes to this shape any more.
+      match /budgets/{goalId} {
+        allow read, delete: if isOwner();
+      }
+
+      match /transactions/{transactionId} {
+        allow read: if isOwner();
+        // `gain` and `loss` are balance adjustments — interest, market
+        // movement — and carry their direction in the kind, so the amount is
+        // positive for every kind alike.
+        allow create, update: if isOwner()
+                              && request.resource.data.amountCents is int
+                              && request.resource.data.amountCents > 0
+                              && request.resource.data.kind in
+                                 ['income', 'expense', 'transfer', 'gain', 'loss'];
+        allow delete: if isOwner();
+      }
+    }
+  }
+}
