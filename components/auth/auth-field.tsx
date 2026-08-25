@@ -1,3 +1,5 @@
+import { inputClasses } from "@/components/ui/field";
+
 type AuthFieldProps = {
   id: string;
   label: string;
@@ -18,7 +20,7 @@ export function AuthField({ id, label, ...inputProps }: AuthFieldProps) {
       <input
         id={id}
         name={id}
-        className="h-11 rounded-lg border border-border bg-surface px-3 text-[0.9375rem] text-foreground transition-colors placeholder:text-muted/70 hover:border-muted/50 disabled:opacity-60"
+        className={inputClasses}
         {...inputProps}
       />
     </div>

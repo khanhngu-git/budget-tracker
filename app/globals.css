@@ -12,6 +12,16 @@
   --border: #e4e4e7;
   --accent: #059669;
   --accent-foreground: #ffffff;
+
+  /* Chart series — slots 1-3 of the validated categorical palette, assigned to
+     accounts by identity and never re-ordered by size. */
+  --series-spending: #2a78d6;
+  --series-savings: #eb6834;
+  --series-investments: #1baf7a;
+
+  --positive: #047857;
+  --warning: #b45309;
+  --negative: #b91c1c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -24,6 +34,15 @@
     --border: #27272a;
     --accent: #10b981;
     --accent-foreground: #052e1f;
+
+    /* Re-stepped for the dark surface, not an automatic flip. */
+    --series-spending: #3987e5;
+    --series-savings: #d95926;
+    --series-investments: #199e70;
+
+    --positive: #34d399;
+    --warning: #f59e0b;
+    --negative: #f87171;
   }
 }
 
@@ -36,6 +55,12 @@
   --color-border: var(--border);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-series-spending: var(--series-spending);
+  --color-series-savings: var(--series-savings);
+  --color-series-investments: var(--series-investments);
+  --color-positive: var(--positive);
+  --color-warning: var(--warning);
+  --color-negative: var(--negative);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -50,4 +75,16 @@ body {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.55);
+}
+
+/* The date picker's own icon is invisible on a dark field. */
+@media (prefers-color-scheme: dark) {
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    opacity: 0.6;
+  }
 }
