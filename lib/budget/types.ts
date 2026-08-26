@@ -1,4 +1,5 @@
 import type { Timestamp } from "firebase/firestore";
+import type { Frequency } from "./recurrence";
 import type { IconName } from "@/components/ui/icon";
 
 /* ── Accounts ───────────────────────────────────────────────────────── */
@@ -133,11 +134,65 @@ export type Transaction = {
   categoryId: string | null;
   note: string;
   date: Date;
+  /**
+   * When the entry was recorded, as opposed to the day it happened.
+   *
+   * `date` comes from a date input and is always local midnight, so every
+   * entry sharing a day ties on it exactly and needs this to break the tie.
+   * Null only for an entry written before this field existed.
+   */
+  createdAt: Date | null;
+  /** Set when a recurring rule posted this entry; null when a person did. */
+  recurringId: string | null;
 };
 
-export type TransactionDoc = Omit<Transaction, "id" | "date"> & {
+export type TransactionDoc = Omit<
+  Transaction,
+  "id" | "date" | "createdAt"
+> & {
   date: Timestamp;
   createdAt: Timestamp;
+};
+
+/* ── Recurring entries ──────────────────────────────────────────────── */
+
+/**
+ * The kinds worth scheduling. `gain` and `loss` are deliberately absent:
+ * they record movement nobody made — interest, a market swing — which is
+ * precisely the thing you cannot know the size of in advance.
+ */
+export const RECURRING_KINDS = ["income", "expense", "transfer"] as const;
+export type RecurringKind = (typeof RECURRING_KINDS)[number];
+
+/**
+ * A standing instruction: this entry, this often, until further notice.
+ *
+ * The rule is not a transaction. It posts them — one per occurrence, ordinary
+ * entries in the same ledger as everything else, so a scheduled salary settles
+ * and can be corrected exactly like a typed one.
+ */
+export type RecurringRule = {
+  id: string;
+  kind: RecurringKind;
+  accountId: string;
+  /** Transfers only. */
+  toAccountId: string | null;
+  /** Income and expenses only. */
+  categoryId: string | null;
+  /** Always positive; `kind` carries the direction. */
+  amountCents: number;
+  note: string;
+  frequency: Frequency;
+  startDate: Date;
+  /** null means "until further notice". */
+  endDate: Date | null;
+  /**
+   * The last occurrence already posted, or null if it has never run. This is
+   * the only thing standing between a second tab and a double-posted salary.
+   */
+  lastRunDate: Date | null;
+  /** A paused rule stays in the list and stops firing. */
+  active: boolean;
 };
 
 /* ── Goals ──────────────────────────────────────────────────────────── */

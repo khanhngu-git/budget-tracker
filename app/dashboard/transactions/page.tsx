@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Section } from "@/components/dashboard/section";
+import { RecurringDialog } from "@/components/dashboard/recurring-dialog";
+import { RecurringManager } from "@/components/dashboard/recurring-manager";
 import { TransactionDialog } from "@/components/dashboard/transaction-dialog";
 import { TransactionList } from "@/components/dashboard/transaction-list";
 import { summariseMonth } from "@/lib/budget/analytics";
@@ -13,7 +15,7 @@ import {
   formatMoney,
   formatSignedMoney,
 } from "@/lib/budget/format";
-import type { Transaction } from "@/lib/budget/types";
+import type { RecurringRule, Transaction } from "@/lib/budget/types";
 
 export default function TransactionsPage() {
   const {
@@ -21,6 +23,8 @@ export default function TransactionsPage() {
     liveAccounts,
     accountsById,
     transactions,
+    recurring,
+    recurringLoading,
     loading,
     monthStart,
   } = useBudgetContext();
@@ -28,6 +32,8 @@ export default function TransactionsPage() {
   const [dialog, setDialog] = useState<{
     transaction: Transaction | null;
   } | null>(null);
+  const [managing, setManaging] = useState(false);
+  const [editingRule, setEditingRule] = useState<RecurringRule | null>(null);
 
   const { incomeCents, expenseCents, netCents } = summariseMonth(transactions);
   const monthLabel = formatMonthLabel(monthStart);
@@ -66,13 +72,30 @@ export default function TransactionsPage() {
           )
         }
         action={
-          <Button
-            onClick={() => setDialog({ transaction: null })}
-            disabled={!uid}
-          >
-            <Icon name="plus" className="h-4 w-4" />
-            Add entry
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Only offered once there's something to manage — an empty list
+                behind a button nobody can fill from here is just a dead end. */}
+            {recurring.length > 0 ? (
+              <Button
+                variant="outline"
+                onClick={() => setManaging(true)}
+                disabled={!uid}
+              >
+                <Icon name="repeat" className="h-4 w-4" />
+                Recurring
+                <span className="tabular-nums text-muted">
+                  {recurring.length}
+                </span>
+              </Button>
+            ) : null}
+            <Button
+              onClick={() => setDialog({ transaction: null })}
+              disabled={!uid}
+            >
+              <Icon name="plus" className="h-4 w-4" />
+              Add entry
+            </Button>
+          </div>
         }
       >
         <TransactionList
@@ -83,6 +106,30 @@ export default function TransactionsPage() {
           onEdit={(transaction) => setDialog({ transaction })}
         />
       </Section>
+
+      <RecurringManager
+        uid={uid}
+        rules={recurring}
+        accounts={accountsById}
+        loading={recurringLoading}
+        open={managing}
+        onClose={() => setManaging(false)}
+        onEdit={(rule) => setEditingRule(rule)}
+      />
+
+      {/* A sibling of the manager, not a child: the edit form opens over the
+          list and closing it returns to the list, still open. */}
+      {uid && editingRule ? (
+        <RecurringDialog
+          // Remounts per rule so the form opens on that rule's own values.
+          key={editingRule.id}
+          uid={uid}
+          accounts={liveAccounts}
+          rule={editingRule}
+          open
+          onClose={() => setEditingRule(null)}
+        />
+      ) : null}
 
       {uid && dialog ? (
         <TransactionDialog

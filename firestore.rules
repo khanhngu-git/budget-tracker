@@ -57,6 +57,21 @@ service cloud.firestore {
         allow read, delete: if isOwner();
       }
 
+      // Standing instructions: what to post, how often, until when. These
+      // write transactions on the user's behalf, so the shape is checked here
+      // as tightly as the entries they produce.
+      match /recurring/{ruleId} {
+        allow read, delete: if isOwner();
+        allow create, update: if isOwner()
+                              && request.resource.data.amountCents is int
+                              && request.resource.data.amountCents > 0
+                              && request.resource.data.accountId is string
+                              && request.resource.data.kind in
+                                 ['income', 'expense', 'transfer']
+                              && request.resource.data.frequency in
+                                 ['weekly', 'fortnightly', 'monthly', 'yearly'];
+      }
+
       match /transactions/{transactionId} {
         allow read: if isOwner();
         // `gain` and `loss` are balance adjustments — interest, market

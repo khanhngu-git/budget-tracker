@@ -5,11 +5,12 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { backfillAccounts, subscribeAccounts } from "./accounts";
 import { migrateLegacyGoals, subscribeGoals, type GoalMap } from "./goals";
 import { subscribeProfile } from "./profile";
+import { catchUpRecurring, subscribeRecurring } from "./recurring";
 import { addMonths, endOfMonth, monthKey, startOfMonth } from "./format";
 import { applyLedger, sumBalances, type Deltas } from "./ledger";
 import { subscribeTransactionsFrom } from "./transactions";
 import type { HistoryPeriod } from "./analytics";
-import type { Account, Transaction } from "./types";
+import type { Account, RecurringRule, Transaction } from "./types";
 
 export { addMonths, endOfMonth, startOfMonth };
 export type { HistoryPeriod };
@@ -53,6 +54,7 @@ export function historyMonthsFor(period: HistoryPeriod): number {
 const EMPTY_ACCOUNTS: Account[] = [];
 const EMPTY_TRANSACTIONS: Transaction[] = [];
 const EMPTY_GOALS: GoalMap = Object.freeze({});
+const EMPTY_RECURRING: RecurringRule[] = [];
 
 /** Applies a run of entries to the balance each account carries. */
 function shiftAccounts(
@@ -110,6 +112,11 @@ export function useBudget(monthStart: Date, historyPeriod: HistoryPeriod) {
     value: boolean;
   }>({ key: "", value: false });
 
+  const [recurringState, setRecurringState] = useState<{
+    key: string;
+    value: RecurringRule[];
+  }>({ key: "", value: EMPTY_RECURRING });
+
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -161,6 +168,29 @@ export function useBudget(monthStart: Date, historyPeriod: HistoryPeriod) {
 
   useEffect(() => {
     if (!uid) return;
+    const key = uid;
+
+    return subscribeRecurring(
+      uid,
+      (next) => setRecurringState({ key, value: next }),
+      () => setError("Couldn't load your recurring entries."),
+    );
+  }, [uid]);
+
+  // Posts whatever the user's schedules owe, once per session. It's dated by
+  // the day each occurrence was due, so opening the app late doesn't bunch a
+  // month of rent onto today — and it's safe to run twice, because each rule
+  // advances its own marker inside the same transaction that writes its
+  // entries.
+  useEffect(() => {
+    if (!uid) return;
+    catchUpRecurring(uid).catch(() => {
+      setError("Couldn't post your recurring entries. They'll retry later.");
+    });
+  }, [uid]);
+
+  useEffect(() => {
+    if (!uid) return;
 
     return subscribeProfile(
       uid,
@@ -188,6 +218,9 @@ export function useBudget(monthStart: Date, historyPeriod: HistoryPeriod) {
     uid !== null && ledgerState.key === `${uid}:${monthTime}:${historyMonths}`;
   const goalsReady = uid !== null && goalsState.key === `${uid}:${monthTime}`;
   const profileReady = uid !== null && profileState.key === uid;
+
+  const recurringReady = uid !== null && recurringState.key === uid;
+  const recurring = recurringReady ? recurringState.value : EMPTY_RECURRING;
 
   const liveAccounts = accountsReady ? accountsState.value : EMPTY_ACCOUNTS;
   const ledger = ledgerReady ? ledgerState.value : EMPTY_TRANSACTIONS;
@@ -260,6 +293,9 @@ export function useBudget(monthStart: Date, historyPeriod: HistoryPeriod) {
     /** The whole loaded window — at least a year back, for the growth chart. */
     ledger,
     goals,
+    /** Standing instructions, whether or not they're currently running. */
+    recurring,
+    recurringLoading: !recurringReady,
     totalCents,
     openingTotalCents,
     /** True once we know the user has never answered the balance prompt. */

@@ -21,3 +21,11 @@ export function accountDoc(uid: string, accountId: string) {
 export function transactionsPath(uid: string) {
   return collection(db, "users", uid, "transactions");
 }
+
+export function recurringPath(uid: string) {
+  return collection(db, "users", uid, "recurring");
+}
+
+export function recurringDoc(uid: string, ruleId: string) {
+  return doc(db, "users", uid, "recurring", ruleId);
+}

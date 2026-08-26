@@ -17,9 +17,14 @@ import {
 import type { EntryInput } from "@/lib/budget/ledger";
 import {
   BudgetError,
-  addTransaction,
   updateTransaction,
 } from "@/lib/budget/transactions";
+import { addEntryWithSchedule } from "@/lib/budget/recurring";
+import {
+  FREQUENCIES,
+  FREQUENCY_LABELS,
+  type Frequency,
+} from "@/lib/budget/recurrence";
 import {
   canSpendFrom,
   isDebt,
@@ -124,10 +129,20 @@ export function TransactionDialog({
   const [date, setDate] = useState(() =>
     toDateInputValue(transaction?.date ?? defaultDateFor(monthStart)),
   );
+  // "" is "doesn't repeat", which is what almost every entry is — so the
+  // schedule stays one closed select until someone opens it.
+  const [repeat, setRepeat] = useState<Frequency | "">("");
+  const [ending, setEnding] = useState<"never" | "on">("never");
+  const [endDate, setEndDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   const flow = kind === "income" ? "income" : "expense";
+  // Editing an entry edits that entry. A schedule is a separate thing with its
+  // own lifetime, managed from its own list — changing last month's rent must
+  // not silently rewrite every rent payment still to come. Adjustments can't
+  // be scheduled at all: nobody knows next month's interest in advance.
+  const canRepeat = !editing && !isAdjustment;
 
   function switchKind(next: FormKind) {
     setKind(next);
@@ -174,6 +189,10 @@ export function TransactionDialog({
       setError("Enter an amount like 24.50.");
       return;
     }
+    if (canRepeat && repeat !== "" && ending === "on" && endDate === "") {
+      setError("Pick the date it should stop, or choose until further notice.");
+      return;
+    }
 
     setError(null);
     setPending(true);
@@ -182,7 +201,16 @@ export function TransactionDialog({
       if (transaction) {
         await updateTransaction(uid, transaction.id, input);
       } else {
-        await addTransaction(uid, input);
+        await addEntryWithSchedule(
+          uid,
+          input,
+          canRepeat && repeat !== ""
+            ? {
+                frequency: repeat,
+                endDate: ending === "on" ? fromDateInputValue(endDate) : null,
+              }
+            : null,
+        );
       }
       onClose();
     } catch (caught) {
@@ -341,6 +369,79 @@ export function TransactionDialog({
             required
           />
         </Field>
+
+        {canRepeat ? (
+          <Field label="Repeat" htmlFor="repeat">
+            <Select
+              id="repeat"
+              value={repeat}
+              onChange={(event) =>
+                setRepeat(event.target.value as Frequency | "")
+              }
+              disabled={pending}
+            >
+              <option value="">Doesn&apos;t repeat</option>
+              {FREQUENCIES.map((option) => (
+                <option key={option} value={option}>
+                  {FREQUENCY_LABELS[option]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
+
+        {canRepeat && repeat !== "" ? (
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1 text-sm font-medium text-foreground">
+              Keeps going
+            </legend>
+            <div
+              role="radiogroup"
+              aria-label="When it stops repeating"
+              className="grid grid-cols-2 gap-2 rounded-lg border border-border p-1"
+            >
+              {(
+                [
+                  { value: "never", label: "Until further notice" },
+                  { value: "on", label: "Until a date" },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={ending === option.value}
+                  onClick={() => setEnding(option.value)}
+                  disabled={pending}
+                  className={`inline-flex h-9 items-center justify-center rounded-md px-2 text-sm font-medium transition-colors ${
+                    ending === option.value
+                      ? "bg-foreground text-background"
+                      : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
+            {ending === "on" ? (
+              <TextInput
+                type="date"
+                aria-label="Last one on"
+                value={endDate}
+                min={date}
+                onChange={(event) => setEndDate(event.target.value)}
+                disabled={pending}
+                required
+              />
+            ) : null}
+
+            <p className="text-xs text-muted">
+              This entry is the first one. The rest are recorded for you as
+              they fall due.
+            </p>
+          </fieldset>
+        ) : null}
 
         <Field label="Note" htmlFor="note" hint="Optional">
           <TextInput

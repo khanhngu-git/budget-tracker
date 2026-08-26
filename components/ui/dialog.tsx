@@ -32,14 +32,32 @@ export function Dialog({
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) {
+      dialog.showModal();
+      // showModal() parks focus on the first tabbable control — the "Expense"
+      // and "Earn" tabs — and the browser treats that as keyboard focus, so
+      // the dialog opened with an accent ring drawn around a tab nobody had
+      // touched. Focus the dialog itself instead: the reader still lands
+      // inside, Tab still walks the form from the top, and nothing is
+      // highlighted as if it were chosen.
+      dialog.focus({ preventScroll: true });
+    }
     if (!open && dialog.open) dialog.close();
   }, [open]);
 
   return (
     <dialog
       ref={ref}
-      onClose={onClose}
+      // Focusable on purpose (see the effect), never tab-reachable.
+      tabIndex={-1}
+      // `close` doesn't bubble in the DOM, but React replays it up the
+      // component tree anyway — so a dialog opened *inside* this one (the
+      // category picker inside the entry form) closing itself would otherwise
+      // close its parent too, and picking a category would dismiss the form
+      // before the choice could be saved. Only act on our own close.
+      onClose={(event) => {
+        if (event.target === ref.current) onClose();
+      }}
       onClick={(event) => {
         // Clicks on the backdrop are reported against the dialog element itself.
         if (event.target === ref.current) onClose();
