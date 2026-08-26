@@ -11,7 +11,12 @@ import {
   formatSignedMoney,
 } from "@/lib/budget/format";
 import { BudgetError, deleteTransaction } from "@/lib/budget/transactions";
-import { isEveryday, type Account, type Transaction } from "@/lib/budget/types";
+import {
+  isDebt,
+  isEveryday,
+  type Account,
+  type Transaction,
+} from "@/lib/budget/types";
 
 /** Accounts by id, so a row can name the account it moved. */
 type AccountLookup = Record<string, Account>;
@@ -59,6 +64,13 @@ function describe(transaction: Transaction, accounts: AccountLookup): string {
       const account = accounts[transaction.accountId];
       const name = nameOf(accounts, transaction.accountId);
       if (account && isEveryday(account.type)) return `${name} adjusted`;
+      // On a debt the balance rising means less is owed, so "growth" would be
+      // exactly the wrong word for it.
+      if (account && isDebt(account.type)) {
+        return `${name} ${
+          transaction.kind === "gain" ? "written off" : "interest"
+        }`;
+      }
       return `${name} ${transaction.kind === "gain" ? "growth" : "loss"}`;
     }
     default:

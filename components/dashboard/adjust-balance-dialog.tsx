@@ -14,7 +14,7 @@ import {
   toDateInputValue,
 } from "@/lib/budget/format";
 import { BudgetError, adjustAccountBalance } from "@/lib/budget/transactions";
-import type { Account } from "@/lib/budget/types";
+import { isDebt, type Account } from "@/lib/budget/types";
 
 /**
  * Restates a savings or investment balance to whatever the provider actually
@@ -40,7 +40,12 @@ export function AdjustBalanceDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  const [balance, setBalance] = useState(() => (currentCents / 100).toFixed(2));
+  // A debt is read off a statement as what's outstanding, so that's what the
+  // field holds; the sign is put back on when the target balance is worked out.
+  const owed = isDebt(account.type);
+  const [balance, setBalance] = useState(() =>
+    (Math.abs(currentCents) / 100).toFixed(2),
+  );
   const [note, setNote] = useState("");
   const [date, setDate] = useState(() =>
     toDateInputValue(defaultDateFor(monthStart)),
@@ -48,13 +53,18 @@ export function AdjustBalanceDialog({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const parsed = parseBalanceToCents(balance);
+  const entered = parseBalanceToCents(balance);
+  const parsed = entered === null ? null : owed ? -entered : entered;
   const difference = parsed === null ? null : parsed - currentCents;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (parsed === null) {
-      setError("Enter the new balance, like 12500.00.");
+      setError(
+        owed
+          ? "Enter what's still owed, like 2400.00."
+          : "Enter the new balance, like 12500.00.",
+      );
       return;
     }
 
@@ -82,13 +92,19 @@ export function AdjustBalanceDialog({
       open={open}
       onClose={onClose}
       title={`Update ${account.name}`}
-      description={`${formatMonthLabel(monthStart)} closed at ${formatMoney(
-        currentCents,
-      )}. Enter what it was actually worth and the difference is filed as growth or a loss.`}
+      description={
+        owed
+          ? `${formatMonthLabel(monthStart)} closed with ${formatMoney(
+              Math.abs(currentCents),
+            )} outstanding. Enter what's owed now and the difference is filed as growth or a loss.`
+          : `${formatMonthLabel(monthStart)} closed at ${formatMoney(
+              currentCents,
+            )}. Enter what it was actually worth and the difference is filed as growth or a loss.`
+      }
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <Field
-          label="New balance"
+          label={owed ? "Still owed" : "New balance"}
           htmlFor="adjust-balance"
           hint={
             difference === null || difference === 0
