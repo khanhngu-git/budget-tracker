@@ -37,16 +37,33 @@ export default function TransactionsPage() {
       <Section
         title={`Everything in ${monthLabel}`}
         // This page is the ledger, not a dashboard. The month's shape belongs
-        // on Overview, where there's room to explain it; here it's one line so
-        // the entries themselves start as high up the page as possible.
+        // on Statistics, where there's room to explain it; here it's one line
+        // so the entries start as high up the page as possible.
         subtitle={
-          transactions.length === 0
-            ? "Nothing recorded this month."
-            : `${transactions.length} ${
-                transactions.length === 1 ? "entry" : "entries"
-              } · ${formatMoney(incomeCents)} in, ${formatMoney(
-                expenseCents,
-              )} out, ${formatSignedMoney(netCents)} net.`
+          transactions.length === 0 ? (
+            "Nothing recorded this month."
+          ) : (
+            <>
+              {transactions.length}{" "}
+              {transactions.length === 1 ? "entry" : "entries"} ·{" "}
+              {formatMoney(incomeCents)} in, {formatMoney(expenseCents)} out ·{" "}
+              {/* The net is the verdict on the month, so it wears the verdict's
+                  colour — you shouldn't have to read the minus sign to know
+                  which way it went. */}
+              <span
+                className={`font-medium ${
+                  netCents > 0
+                    ? "text-positive"
+                    : netCents < 0
+                      ? "text-negative"
+                      : "text-foreground"
+                }`}
+              >
+                {formatSignedMoney(netCents)}
+              </span>{" "}
+              net
+            </>
+          )
         }
         action={
           <Button

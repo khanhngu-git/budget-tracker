@@ -1,6 +1,7 @@
 import {
   Timestamp,
   doc,
+  writeBatch,
   onSnapshot,
   orderBy,
   query,
@@ -19,8 +20,9 @@ import {
   type Deltas,
   type EntryInput,
 } from "./ledger";
-import { accountDoc, transactionsPath } from "./paths";
-import type { Transaction, TransactionKind } from "./types";
+import { normaliseName } from "./accounts";
+import { accountDoc, accountsPath, transactionsPath } from "./paths";
+import type { AccountType, Transaction, TransactionKind } from "./types";
 
 export { transactionsPath };
 export { BudgetError };
@@ -294,6 +296,57 @@ export async function setAccountBalances(
       });
     });
   });
+}
+
+/**
+ * Creates a set of accounts and files what each one already holds, in a single
+ * batch.
+ *
+ * This is onboarding's last step, and it's one write for a reason: a run that
+ * stopped halfway would leave someone with three of their five accounts and no
+ * way to tell which two never landed. Balances are recorded as ordinary gains
+ * rather than written straight onto the account, so even the very first figure
+ * has an entry in the history explaining it.
+ */
+export async function openAccountsWithBalances(
+  uid: string,
+  entries: { name: string; type: AccountType; balanceCents: number }[],
+  input: { note: string; date: Date; orderFrom?: number },
+): Promise<void> {
+  for (const entry of entries) {
+    if (normaliseName(entry.name) === "") {
+      throw new BudgetError("Give every account a name.");
+    }
+    if (!Number.isInteger(entry.balanceCents) || entry.balanceCents < 0) {
+      throw new BudgetError("Enter each balance as an amount, like 1250.00.");
+    }
+  }
+
+  const batch = writeBatch(db);
+
+  entries.forEach((entry, index) => {
+    const ref = doc(accountsPath(uid));
+    batch.set(ref, {
+      name: normaliseName(entry.name),
+      type: entry.type,
+      balanceCents: entry.balanceCents,
+      order: (input.orderFrom ?? 0) + index,
+    });
+
+    if (entry.balanceCents === 0) return;
+    batch.set(doc(transactionsPath(uid)), {
+      ...documentFor({
+        kind: "gain",
+        accountId: ref.id,
+        amountCents: entry.balanceCents,
+        note: input.note,
+        date: input.date,
+      }),
+      createdAt: serverTimestamp(),
+    });
+  });
+
+  await batch.commit();
 }
 
 /**
