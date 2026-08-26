@@ -32,6 +32,10 @@ export const ACCOUNT_PRESETS: { name: string; type: AccountType }[] = [
   { name: "Emergency fund", type: "savings" },
   { name: "Investments", type: "investments" },
   { name: "Pension", type: "investments" },
+  { name: "Credit card", type: "debt" },
+  { name: "Loan", type: "debt" },
+  { name: "Mortgage", type: "debt" },
+  { name: "Overdraft", type: "debt" },
 ];
 
 export const MAX_ACCOUNT_NAME = 32;
@@ -179,7 +183,13 @@ export async function deleteAccount(
   const snapshot = await getDoc(accountDoc(uid, accountId));
   if (!snapshot.exists()) return;
 
-  if (readBalance(snapshot.data()) !== 0) {
+  const balanceCents = readBalance(snapshot.data());
+  if (balanceCents < 0) {
+    throw new BudgetError(
+      "There's still a balance owed on this account. Pay it off with a transfer first, then remove it.",
+    );
+  }
+  if (balanceCents !== 0) {
     throw new BudgetError(
       "This account still holds money. Transfer it somewhere else first, then remove the account.",
     );

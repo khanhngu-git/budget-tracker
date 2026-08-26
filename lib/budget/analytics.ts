@@ -608,6 +608,100 @@ export function allocationOf(goals: GoalMap): Allocation {
   };
 }
 
+/* ── The allocation bar ─────────────────────────────────────────────── */
+
+/** The scopes money is allocated *to* — income is what it comes out of. */
+export type SpendScope = Exclude<GoalScope, "income">;
+
+export const SPEND_SCOPES: SpendScope[] = ["savings", "investments", "expense"];
+
+export const SCOPE_LABELS: Record<SpendScope, string> = {
+  savings: "Saving",
+  investments: "Investing",
+  expense: "Spending limits",
+};
+
+/**
+ * One colour per scope, held as a token so the bar, its legend and anything
+ * else that grows a scope colour later all resolve the same variable.
+ */
+export const SCOPE_COLORS: Record<SpendScope, string> = {
+  savings: "var(--scope-savings)",
+  investments: "var(--scope-investments)",
+  expense: "var(--scope-expense)",
+};
+
+export type AllocationSegment = {
+  /** The goal's document id — stable, so React keys don't shuffle. */
+  id: string;
+  label: string;
+  scope: SpendScope;
+  amountCents: number;
+  /** Of the income target. 0 when no target is set. */
+  share: number;
+};
+
+export type AllocationGroup = {
+  scope: SpendScope;
+  label: string;
+  color: string;
+  amountCents: number;
+  share: number;
+  segments: AllocationSegment[];
+};
+
+/**
+ * The month's plan broken into the pieces it is actually made of.
+ *
+ * A single filled bar answers "how much is promised" and nothing else, which
+ * is the least interesting version of the question — the useful one is what
+ * it's promised *to*. Segments are per goal so a plan with six spending limits
+ * shows six pieces, and coloured by scope so the eye reads saving, investing
+ * and spending as three blocks before it reads any individual limit.
+ *
+ * Groups come back in a fixed order — saving, investing, then limits — rather
+ * than sorted by size: a bar that reorders itself when one goal grows is a bar
+ * the reader has to re-learn every month.
+ */
+export function allocationBreakdown(goals: GoalMap): Allocation & {
+  groups: AllocationGroup[];
+} {
+  const allocation = allocationOf(goals);
+  const target = allocation.incomeTargetCents ?? 0;
+  const shareOf = (cents: number) => (target > 0 ? cents / target : 0);
+
+  const groups = SPEND_SCOPES.map((scope) => {
+    const segments = Object.values(goals)
+      .filter((goal) => goal.scope === scope)
+      .map((goal) => ({
+        id: goal.id,
+        label: goalLabel(goal),
+        scope,
+        amountCents: goal.amountCents,
+        share: shareOf(goal.amountCents),
+      }))
+      // Within a group, biggest first: the segments share a colour, so size is
+      // the only thing distinguishing them and it may as well be ordered.
+      .sort((a, b) => b.amountCents - a.amountCents);
+
+    const amountCents = segments.reduce(
+      (sum, segment) => sum + segment.amountCents,
+      0,
+    );
+
+    return {
+      scope,
+      label: SCOPE_LABELS[scope],
+      color: SCOPE_COLORS[scope],
+      amountCents,
+      share: shareOf(amountCents),
+      segments,
+    };
+  }).filter((group) => group.segments.length > 0);
+
+  return { ...allocation, groups };
+}
+
 /**
  * Checks a proposed goal against the income it has to come out of.
  *

@@ -17,6 +17,7 @@ const MESSAGES: Record<string, string> = {
   "auth/invalid-email": "That email address doesn't look right.",
   "auth/weak-password": "Password must be at least 6 characters.",
   "auth/missing-password": "Please enter a password.",
+  "auth/missing-email": "Please enter your email address.",
   // Firebase collapses wrong-password / unknown-email into this code when email
   // enumeration protection is on (the default for new projects).
   "auth/invalid-credential": "Incorrect email or password.",

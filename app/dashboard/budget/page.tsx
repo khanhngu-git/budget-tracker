@@ -6,9 +6,10 @@ import { Icon } from "@/components/ui/icon";
 import { Section } from "@/components/dashboard/section";
 import { GoalCard } from "@/components/budgets/goal-card";
 import { GoalDialog } from "@/components/budgets/goal-dialog";
+import { AllocationBar } from "@/components/budgets/allocation-bar";
 import {
   allGoalProgress,
-  allocationOf,
+  allocationBreakdown,
   monthElapsed,
   rollUpGoals,
 } from "@/lib/budget/analytics";
@@ -71,12 +72,8 @@ export default function BudgetPage() {
   const rollup = rollUpGoals(progress);
   const busy = loading || goalsLoading;
 
-  const { incomeTargetCents, allocatedCents, unallocatedCents } =
-    allocationOf(goals);
-  const allocatedShare =
-    incomeTargetCents && incomeTargetCents > 0
-      ? Math.min(1, allocatedCents / incomeTargetCents)
-      : 0;
+  const { incomeTargetCents, allocatedCents, unallocatedCents, groups } =
+    allocationBreakdown(goals);
 
   async function handleRemove(id: string) {
     if (!uid) return;
@@ -186,29 +183,13 @@ export default function BudgetPage() {
             </>
           ) : (
             <>
-              <div
-                role="meter"
-                aria-label={`Share of ${monthLabel}'s income target already allocated`}
-                aria-valuenow={allocatedCents}
-                aria-valuemin={0}
-                aria-valuemax={incomeTargetCents}
-                aria-valuetext={`${formatMoney(allocatedCents)} of ${formatMoney(
-                  incomeTargetCents,
-                )} allocated`}
-                className="h-2.5 overflow-hidden rounded-sm"
-                style={{
-                  backgroundColor:
-                    "color-mix(in oklab, var(--accent) 16%, var(--surface-muted))",
-                }}
-              >
-                <div
-                  className="h-full rounded-r-[4px] transition-[width] duration-200"
-                  style={{
-                    width: `${allocatedShare * 100}%`,
-                    backgroundColor: "var(--accent)",
-                  }}
-                />
-              </div>
+              <AllocationBar
+                groups={groups}
+                allocatedCents={allocatedCents}
+                unallocatedCents={unallocatedCents}
+                incomeTargetCents={incomeTargetCents}
+                monthLabel={monthLabel}
+              />
               <p className="text-sm text-muted">
                 {unallocatedCents > 0
                   ? `${formatMoney(unallocatedCents)} — ${formatPercent(

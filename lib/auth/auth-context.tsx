@@ -14,12 +14,14 @@ import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   sendEmailVerification,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
   updateProfile,
   type User,
 } from "firebase/auth";
+import { FirebaseError } from "firebase/app";
 import { auth } from "@/lib/firebase/client";
 import { EmailNotVerifiedError } from "./errors";
 
@@ -33,6 +35,9 @@ type AuthContextValue = {
   signIn: (email: string, password: string) => Promise<void>;
   /** Google OAuth popup — used for both sign-up and sign-in. */
   signInWithGoogle: () => Promise<void>;
+  /** Emails a reset link. Resolves the same way whether or not the address
+      has an account, so it can't be used to find out which addresses do. */
+  resetPassword: (email: string) => Promise<void>;
   logOut: () => Promise<void>;
 };
 
@@ -103,13 +108,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signInWithPopup(auth, provider);
   }, []);
 
+  const resetPassword = useCallback(async (email: string) => {
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+    } catch (caught) {
+      // "No such user" is not something a signed-out form is allowed to
+      // reveal — it turns the reset box into an account-enumeration oracle.
+      // Newer Firebase projects hide it anyway; older ones are hidden here.
+      if (
+        caught instanceof FirebaseError &&
+        (caught.code === "auth/user-not-found" ||
+          caught.code === "auth/invalid-recipient-email")
+      ) {
+        return;
+      }
+      throw caught;
+    }
+  }, []);
+
   const logOut = useCallback(async () => {
     await signOut(auth);
   }, []);
 
   const value = useMemo(
-    () => ({ user: session.user, loading, signUp, signIn, signInWithGoogle, logOut }),
-    [session, loading, signUp, signIn, signInWithGoogle, logOut],
+    () => ({
+      user: session.user,
+      loading,
+      signUp,
+      signIn,
+      signInWithGoogle,
+      resetPassword,
+      logOut,
+    }),
+    [session, loading, signUp, signIn, signInWithGoogle, resetPassword, logOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

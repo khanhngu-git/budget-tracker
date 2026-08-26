@@ -4,18 +4,21 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { Logo } from "@/components/brand/logo";
+import { Avatar } from "@/components/settings/avatar";
 import { Button } from "@/components/ui/button";
 import { MonthSwitcher } from "@/components/dashboard/month-switcher";
 import { OnboardingDialog } from "@/components/dashboard/onboarding-dialog";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useBudgetContext } from "@/lib/budget/budget-context";
 import { formatMonthLabel } from "@/lib/budget/format";
+import { useSettings } from "@/lib/settings/settings-context";
 
 const TABS = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/transactions", label: "Transactions" },
   { href: "/dashboard/budget", label: "Budget" },
   { href: "/dashboard/statistics", label: "Statistics" },
+  { href: "/dashboard/settings", label: "Settings" },
 ] as const;
 
 /**
@@ -29,6 +32,7 @@ const TABS = [
  */
 export function DashboardShell({ children }: { children: ReactNode }) {
   const { user, logOut } = useAuth();
+  const { preferences, formatKey } = useSettings();
   const {
     uid,
     liveAccounts,
@@ -41,6 +45,17 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   // Dismissing leaves the flag unset, so the prompt returns next session
   // rather than being lost to a stray Escape.
   const [dismissed, setDismissed] = useState(false);
+
+  // …but a reset puts the app back to before onboarding, and a dismissal made
+  // half an hour ago must not swallow the prompt for the empty books the user
+  // has only just asked for. Re-armed on the false → true edge, during render,
+  // so the dialog is already open on the frame the reset lands.
+  const [wasNeeded, setWasNeeded] = useState(needsOpeningBalances);
+  if (wasNeeded !== needsOpeningBalances) {
+    setWasNeeded(needsOpeningBalances);
+    if (needsOpeningBalances) setDismissed(false);
+  }
+
   const pathname = usePathname();
 
   return (
@@ -49,9 +64,22 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between px-6">
           <Logo href="/dashboard" />
           <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-muted sm:inline">
-              {user?.email}
-            </span>
+            {/* Links to Settings rather than opening a menu: the avatar is the
+                only thing on this page that is *about* the user, so the one
+                page that is too. */}
+            <Link
+              href="/dashboard/settings"
+              className="flex min-w-0 items-center gap-2 rounded-full py-1 pl-1 pr-2 transition-colors hover:bg-surface-muted"
+            >
+              <Avatar
+                preferences={preferences}
+                fallback={user?.email ?? ""}
+                size="sm"
+              />
+              <span className="hidden max-w-[14rem] truncate text-sm text-muted sm:inline">
+                {preferences.displayName.trim() || user?.email}
+              </span>
+            </Link>
             <Button variant="outline" size="sm" onClick={logOut}>
               Log out
             </Button>
@@ -111,7 +139,14 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           </p>
         ) : null}
 
-        {children}
+        {/* Keyed on the money format: pages below format amounts through a
+            module-level setting rather than a prop, so a currency change has
+            nothing to re-render them. Remounting the page — not the providers
+            above it — is what makes the new currency appear everywhere at
+            once, without tearing down the Firestore listeners. */}
+        <div key={formatKey} className="flex flex-1 flex-col gap-6">
+          {children}
+        </div>
       </main>
 
       {/* Held until the accounts have arrived: the dialog decides which step to

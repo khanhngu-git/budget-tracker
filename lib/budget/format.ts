@@ -3,16 +3,81 @@
  * so repeated adds and transfers can't accumulate binary-float error.
  */
 
-const CURRENCY = "USD";
-const LOCALE = "en-US";
+/**
+ * How money is written, held as module state rather than threaded through
+ * every call site.
+ *
+ * Formatting shows up in analytics sentences, chart tooltips and account cards
+ * alike — none of which have any business knowing which currency the user
+ * picked. The settings provider sets this once, above the dashboard, and every
+ * `formatMoney` in the tree picks it up. Safe because the dashboard is behind
+ * an auth splash: nothing money-shaped is ever rendered on the server, so a
+ * currency other than the default can't cause a hydration mismatch.
+ */
+let currency = "USD";
+let locale = "en-US";
+/** Whole units only — for someone who doesn't want to read cents all day. */
+let hideCents = false;
+
+export function setMoneyFormat(next: {
+  currency?: string;
+  locale?: string;
+  hideCents?: boolean;
+}): void {
+  if (next.currency) currency = next.currency;
+  if (next.locale) locale = next.locale;
+  if (next.hideCents !== undefined) hideCents = next.hideCents;
+}
+
+export function moneyFormat(): {
+  currency: string;
+  locale: string;
+  hideCents: boolean;
+} {
+  return { currency, locale, hideCents };
+}
+
+/**
+ * How many decimal places the chosen currency actually has.
+ *
+ * Not every currency has two: yen and đồng have none, and forcing "¥1,234.00"
+ * onto them writes an amount no reader of that currency has ever seen. Cached
+ * because resolving it builds a formatter, and this is called for every figure
+ * on the page.
+ */
+const digitsByCurrency = new Map<string, number>();
+
+function currencyDigits(): number {
+  const cached = digitsByCurrency.get(currency);
+  if (cached !== undefined) return cached;
+
+  const resolved = new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency,
+  }).resolvedOptions().maximumFractionDigits;
+  const digits = Math.min(2, resolved ?? 2);
+
+  digitsByCurrency.set(currency, digits);
+  return digits;
+}
 
 export function formatMoney(cents: number, { compact = false } = {}): string {
-  return new Intl.NumberFormat(LOCALE, {
+  const digits = compact || hideCents ? 0 : currencyDigits();
+  return new Intl.NumberFormat(locale, {
     style: "currency",
-    currency: CURRENCY,
-    minimumFractionDigits: compact ? 0 : 2,
-    maximumFractionDigits: compact ? 0 : 2,
+    currency,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
   }).format(cents / 100);
+}
+
+/** The symbol on its own — for a field label, where the amount is typed bare. */
+export function currencySymbol(): string {
+  const parts = new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency,
+  }).formatToParts(0);
+  return parts.find((part) => part.type === "currency")?.value ?? "";
 }
 
 export function formatSignedMoney(cents: number): string {
@@ -21,8 +86,16 @@ export function formatSignedMoney(cents: number): string {
 }
 
 function parseToCents(input: string): number | null {
-  const trimmed = input.trim().replace(/[$,\s]/g, "");
-  if (!/^\d*\.?\d{0,2}$/.test(trimmed) || trimmed === "" || trimmed === ".") {
+  // Everything that isn't a digit, a decimal point or a leading minus is
+  // grouping or a currency symbol — and which symbol that is now depends on
+  // the user's currency, so nothing may be hard-coded here.
+  const trimmed = input.trim().replace(/[^\d.-]/g, "");
+  if (
+    !/^-?\d*\.?\d{0,2}$/.test(trimmed) ||
+    trimmed === "" ||
+    trimmed === "." ||
+    trimmed === "-"
+  ) {
     return null;
   }
   // Round after scaling: parseFloat("19.99") * 100 is 1998.9999... in binary float.
@@ -48,15 +121,26 @@ export function parseBalanceToCents(input: string): number | null {
   return cents !== null && cents >= 0 ? cents : null;
 }
 
+/**
+ * A balance that is allowed to be below zero.
+ *
+ * Debt accounts are the whole reason this exists: a loan or a credit card is
+ * money you hold *less* of than nothing, and forcing it positive would file a
+ * mortgage as an asset.
+ */
+export function parseSignedBalanceToCents(input: string): number | null {
+  return parseToCents(input);
+}
+
 export function formatDay(date: Date): string {
-  return new Intl.DateTimeFormat(LOCALE, {
+  return new Intl.DateTimeFormat(locale, {
     day: "numeric",
     month: "short",
   }).format(date);
 }
 
 export function formatMonthLabel(date: Date): string {
-  return new Intl.DateTimeFormat(LOCALE, {
+  return new Intl.DateTimeFormat(locale, {
     month: "long",
     year: "numeric",
   }).format(date);
@@ -64,7 +148,7 @@ export function formatMonthLabel(date: Date): string {
 
 /** "Aug" — for axis ticks, where the year is carried by the axis itself. */
 export function formatMonthShort(date: Date): string {
-  return new Intl.DateTimeFormat(LOCALE, { month: "short" }).format(date);
+  return new Intl.DateTimeFormat(locale, { month: "short" }).format(date);
 }
 
 /**
@@ -95,7 +179,7 @@ export function formatDayHeading(date: Date, now: Date = new Date()): string {
   if (daysApart === 0) return "Today";
   if (daysApart === 1) return "Yesterday";
 
-  return new Intl.DateTimeFormat(LOCALE, {
+  return new Intl.DateTimeFormat(locale, {
     weekday: "short",
     day: "numeric",
     month: "long",
@@ -207,7 +291,7 @@ export function addYears(date: Date, delta: number): Date {
 
 /** "Aug 14" — for axis ticks, where the year is carried by the axis itself. */
 export function formatDayShort(date: Date): string {
-  return new Intl.DateTimeFormat(LOCALE, {
+  return new Intl.DateTimeFormat(locale, {
     month: "short",
     day: "numeric",
   }).format(date);
@@ -215,7 +299,7 @@ export function formatDayShort(date: Date): string {
 
 /** "14 August 2026" — the long form, for a readout line that has the room. */
 export function formatDayLong(date: Date): string {
-  return new Intl.DateTimeFormat(LOCALE, {
+  return new Intl.DateTimeFormat(locale, {
     day: "numeric",
     month: "long",
     year: "numeric",

@@ -16,6 +16,7 @@ export const ACCOUNT_TYPES = [
   "cash",
   "savings",
   "investments",
+  "debt",
 ] as const;
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
@@ -24,6 +25,7 @@ export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   cash: "Cash",
   savings: "Savings",
   investments: "Investments",
+  debt: "Loan or debt",
 };
 
 export const ACCOUNT_TYPE_BLURBS: Record<AccountType, string> = {
@@ -31,6 +33,7 @@ export const ACCOUNT_TYPE_BLURBS: Record<AccountType, string> = {
   cash: "Notes and coins in hand",
   savings: "Set aside for later",
   investments: "Long-term growth",
+  debt: "Money you owe",
 };
 
 export const ACCOUNT_TYPE_ICONS: Record<AccountType, IconName> = {
@@ -38,6 +41,7 @@ export const ACCOUNT_TYPE_ICONS: Record<AccountType, IconName> = {
   cash: "coins",
   savings: "vault",
   investments: "trendUp",
+  debt: "debt",
 };
 
 /**
@@ -48,6 +52,30 @@ export const ACCOUNT_TYPE_ICONS: Record<AccountType, IconName> = {
  */
 export function isEveryday(type: AccountType): boolean {
   return type === "spending" || type === "cash";
+}
+
+/**
+ * An account whose balance is what you owe rather than what you have.
+ *
+ * It is stored as an ordinary negative balance — a £2,400 card is
+ * `-240000` — so every total in the app already nets it off without a special
+ * case, and net worth is the plain sum it always was. What changes is the
+ * wording: "you owe" rather than "you have", and paying it down is a transfer
+ * *into* it that moves the balance up toward zero.
+ */
+export function isDebt(type: AccountType): boolean {
+  return type === "debt";
+}
+
+/**
+ * Accounts an everyday expense can be charged to.
+ *
+ * A credit card is spent from exactly like a current account — the money just
+ * isn't yours yet — so refusing to charge an expense to one would push people
+ * into recording card spending against the wrong account.
+ */
+export function canSpendFrom(type: AccountType): boolean {
+  return isEveryday(type) || isDebt(type);
 }
 
 export type Account = {

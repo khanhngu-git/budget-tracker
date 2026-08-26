@@ -25,13 +25,27 @@
   --series-7: #4a3aa7;
   --series-8: #e34948;
 
+  /* Budget scopes. Each part of a plan keeps one colour wherever it appears —
+     the allocation bar, its legend, the goal cards — so "green is saving" is
+     learned once. Drawn from the same validated palette as the series slots,
+     three hues apart so they survive every CVD gate. */
+  --scope-savings: var(--series-3);
+  --scope-investments: var(--series-7);
+  --scope-expense: var(--series-2);
+
   --positive: #047857;
   --warning: #b45309;
   --negative: #b91c1c;
 }
 
+/* Dark, said twice on purpose.
+
+   "System" is the default and stamps no attribute, so it can only be detected
+   through the media query; an explicit choice stamps data-theme and has to win
+   in both directions — including light-on-a-dark-system, which is why the
+   media query excludes it rather than simply being overridden. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --background: #09090b;
     --surface: #101013;
     --surface-muted: #0d0d10;
@@ -57,6 +71,44 @@
   }
 }
 
+:root[data-theme="dark"] {
+    --background: #09090b;
+    --surface: #101013;
+    --surface-muted: #0d0d10;
+    --foreground: #fafafa;
+    --muted: #a1a1aa;
+    --border: #27272a;
+    --accent: #10b981;
+    --accent-foreground: #052e1f;
+
+    /* Re-stepped for the dark surface, not an automatic flip. */
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+
+    --positive: #34d399;
+    --warning: #f59e0b;
+    --negative: #f87171;
+}
+
+/* Tailwind's `dark:` variant defaults to the media query alone, which would
+   ignore a theme the user picked. Both routes into dark, in one variant. */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+  &:where(:root[data-theme="dark"], :root[data-theme="dark"] *) {
+    @slot;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
@@ -74,6 +126,9 @@
   --color-series-6: var(--series-6);
   --color-series-7: var(--series-7);
   --color-series-8: var(--series-8);
+  --color-scope-savings: var(--scope-savings);
+  --color-scope-investments: var(--scope-investments);
+  --color-scope-expense: var(--scope-expense);
   --color-positive: var(--positive);
   --color-warning: var(--warning);
   --color-negative: var(--negative);
@@ -99,8 +154,13 @@ dialog::backdrop {
 
 /* The date picker's own icon is invisible on a dark field. */
 @media (prefers-color-scheme: dark) {
-  input[type="date"]::-webkit-calendar-picker-indicator {
+  :root:not([data-theme="light"]) input[type="date"]::-webkit-calendar-picker-indicator {
     filter: invert(1);
     opacity: 0.6;
   }
+}
+
+:root[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.6;
 }

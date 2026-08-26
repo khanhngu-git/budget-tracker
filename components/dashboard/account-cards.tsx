@@ -6,6 +6,7 @@ import { formatMoney } from "@/lib/budget/format";
 import {
   ACCOUNT_TYPE_BLURBS,
   ACCOUNT_TYPE_ICONS,
+  isDebt,
   isEveryday,
   seriesColor,
   type Account,
@@ -31,6 +32,16 @@ function activityLine(account: Account, transactions: Transaction[]): string {
     if (contributionCents < 0) {
       parts.push(`${formatMoney(-contributionCents)} moved away`);
     }
+  } else if (isDebt(account.type)) {
+    // Every direction reads the opposite way here: money moving *into* a debt
+    // account is a repayment, and a gain on it is debt forgiven, not interest
+    // earned. Saying "added" would be exactly backwards.
+    if (contributionCents > 0) parts.push(`${formatMoney(contributionCents)} repaid`);
+    if (contributionCents < 0) {
+      parts.push(`${formatMoney(-contributionCents)} drawn down`);
+    }
+    if (growthCents > 0) parts.push(`${formatMoney(growthCents)} written off`);
+    if (growthCents < 0) parts.push(`${formatMoney(-growthCents)} of interest`);
   } else {
     if (contributionCents > 0) parts.push(`${formatMoney(contributionCents)} added`);
     if (contributionCents < 0) {
@@ -78,6 +89,7 @@ export function AccountCards({
         // Colour follows the account's position in the list, so adding a new
         // one never repaints the ones the reader already knows.
         const color = seriesColor(index);
+        const owed = isDebt(account.type);
 
         return (
           <article
@@ -108,22 +120,35 @@ export function AccountCards({
               </div>
             </div>
 
+            {/* A debt is stated as what's owed rather than as a negative
+                balance: "−$2,400.00" is arithmetic, "$2,400.00 owed" is the
+                thing the reader actually has to deal with. */}
             <p
               className={`text-2xl font-semibold tracking-tight ${
                 balance < 0 ? "text-negative" : "text-foreground"
               }`}
             >
-              {formatMoney(balance)}
+              {owed ? formatMoney(Math.abs(balance)) : formatMoney(balance)}
+              {owed && balance !== 0 ? (
+                <span className="ml-1.5 text-sm font-medium text-muted">
+                  owed
+                </span>
+              ) : null}
             </p>
 
             <div className="flex flex-col gap-1">
               {/* The rollover, stated: this month starts where last month
                   finished, and nothing before it can move again. */}
               <p className="truncate text-xs text-muted">
-                Rolled over {formatMoney(opened)}
+                {owed ? "Owed" : "Rolled over"}{" "}
+                {formatMoney(owed ? Math.abs(opened) : opened)}
                 {change === 0
                   ? " · unchanged"
-                  : `, ${change > 0 ? "up" : "down"} ${formatMoney(Math.abs(change))}`}
+                  : // On a debt the balance rising *is* the debt falling, so
+                    // the direction word is flipped rather than the number.
+                    `, ${(owed ? -change : change) > 0 ? "up" : "down"} ${formatMoney(
+                      Math.abs(change),
+                    )}`}
               </p>
               <p className="truncate text-xs text-muted">
                 {activityLine(account, transactions)}

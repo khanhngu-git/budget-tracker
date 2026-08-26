@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Select, TextInput } from "@/components/ui/field";
+import { Field, TextInput } from "@/components/ui/field";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { checkAllocation, allocationOf } from "@/lib/budget/analytics";
+import { CategoryPicker } from "@/components/dashboard/category-picker";
 import { categoriesFor } from "@/lib/budget/categories";
 import {
   formatMoney,
@@ -72,6 +73,12 @@ export function GoalDialog({
   );
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  const budgeted = new Set(
+    Object.values(goals)
+      .filter((entry) => entry.scope === "expense" && entry.categoryId)
+      .map((entry) => entry.categoryId as string),
+  );
 
   const existing =
     goals[goalId(scope, scope === "expense" ? categoryId : null)];
@@ -166,19 +173,26 @@ export function GoalDialog({
         )}
 
         {scope === "expense" ? (
-          <Field label="Category" htmlFor="goal-category">
-            <Select
+          <Field
+            label="Category"
+            htmlFor="goal-category"
+            hint={
+              editing
+                ? "A limit stays with the category it was set for."
+                : undefined
+            }
+          >
+            <CategoryPicker
               id="goal-category"
+              flow="expense"
               value={categoryId}
-              onChange={(event) => setCategoryId(event.target.value)}
+              onChange={setCategoryId}
               disabled={pending || editing}
-            >
-              {expenseCategories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.label}
-                </option>
-              ))}
-            </Select>
+              // Marked rather than hidden: seeing that Groceries is already
+              // budgeted is the answer to "why can't I add it again?".
+              takenIds={editing ? undefined : budgeted}
+              takenNote="Already budgeted"
+            />
           </Field>
         ) : null}
 

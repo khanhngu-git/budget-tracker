@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Select, TextInput } from "@/components/ui/field";
 import { Icon } from "@/components/ui/icon";
+import { CategoryPicker } from "@/components/dashboard/category-picker";
 import { categoriesFor } from "@/lib/budget/categories";
 import {
   defaultDateFor,
@@ -19,7 +20,12 @@ import {
   addTransaction,
   updateTransaction,
 } from "@/lib/budget/transactions";
-import { isEveryday, type Account, type Transaction } from "@/lib/budget/types";
+import {
+  canSpendFrom,
+  isDebt,
+  type Account,
+  type Transaction,
+} from "@/lib/budget/types";
 
 type FormKind = "expense" | "income" | "transfer" | "gain" | "loss";
 
@@ -68,13 +74,25 @@ export function TransactionDialog({
   const isAdjustment =
     transaction?.kind === "gain" || transaction?.kind === "loss";
 
-  // Everyday income and expenses come out of everyday accounts. If the user
-  // has kept none, every account is offered rather than blocking the entry —
-  // recording what happened matters more than the tidiness of the model.
-  const everyday = accounts.filter((account) => isEveryday(account.type));
+  // Everyday income and expenses come out of the accounts you actually pay
+  // with — including a card, which is spent from exactly like a current
+  // account. If the user has kept none, every account is offered rather than
+  // blocking the entry: recording what happened matters more than the
+  // tidiness of the model.
+  const everyday = accounts.filter((account) => canSpendFrom(account.type));
   const spendable = everyday.length > 0 ? everyday : accounts;
-  const balanceOf = (id: string) =>
-    accounts.find((account) => account.id === id)?.balanceCents ?? 0;
+  const accountOf = (id: string) =>
+    accounts.find((account) => account.id === id) ?? null;
+  const balanceOf = (id: string) => accountOf(id)?.balanceCents ?? 0;
+
+  /** "Balance" means the opposite thing on a card, so it isn't called that. */
+  function balanceHint(id: string): string {
+    const target = accountOf(id);
+    if (target && isDebt(target.type)) {
+      return `Owed: ${formatMoney(Math.abs(target.balanceCents))}`;
+    }
+    return `Balance: ${formatMoney(balanceOf(id))}`;
+  }
 
   const [kind, setKind] = useState<FormKind>(
     (transaction?.kind as FormKind) ?? "expense",
@@ -110,7 +128,6 @@ export function TransactionDialog({
   const [pending, setPending] = useState(false);
 
   const flow = kind === "income" ? "income" : "expense";
-  const options = categoriesFor(flow);
 
   function switchKind(next: FormKind) {
     setKind(next);
@@ -238,18 +255,13 @@ export function TransactionDialog({
         {kind === "income" || kind === "expense" ? (
           <>
             <Field label="Category" htmlFor="category">
-              <Select
+              <CategoryPicker
                 id="category"
+                flow={flow}
                 value={categoryId}
-                onChange={(event) => setCategoryId(event.target.value)}
+                onChange={setCategoryId}
                 disabled={pending}
-              >
-                {options.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.label}
-                  </option>
-                ))}
-              </Select>
+              />
             </Field>
 
             {/* Offered only when there's a genuine choice to make — a single
@@ -258,7 +270,7 @@ export function TransactionDialog({
               <Field
                 label={kind === "income" ? "Paid into" : "Paid from"}
                 htmlFor="account"
-                hint={`Balance: ${formatMoney(balanceOf(account))}`}
+                hint={balanceHint(account)}
               >
                 <Select
                   id="account"
@@ -282,7 +294,7 @@ export function TransactionDialog({
             <Field
               label="From"
               htmlFor="from"
-              hint={`Available: ${formatMoney(balanceOf(from))}`}
+              hint={balanceHint(from)}
             >
               <Select
                 id="from"
