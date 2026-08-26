@@ -1,5 +1,17 @@
 import { FirebaseError } from "firebase/app";
 
+/**
+ * Raised when the credentials were right but the address has never been
+ * confirmed. Its own type rather than a message, because the login form has
+ * something to *say* about it — a link is on its way — that no other failure
+ * shares.
+ */
+export class EmailNotVerifiedError extends Error {
+  constructor(readonly email: string) {
+    super(`${email} hasn't been verified yet.`);
+  }
+}
+
 const MESSAGES: Record<string, string> = {
   "auth/email-already-in-use": "An account with that email already exists.",
   "auth/invalid-email": "That email address doesn't look right.",
@@ -32,6 +44,9 @@ const MESSAGES: Record<string, string> = {
  * the user deliberately backing out (a dismissed popup) and needs no message.
  */
 export function authErrorMessage(error: unknown): string | null {
+  if (error instanceof EmailNotVerifiedError) {
+    return `Verify your email first. We've sent a fresh link to ${error.email} — open it, then log in.`;
+  }
   if (error instanceof FirebaseError) {
     const message = MESSAGES[error.code];
     if (message === "") return null;

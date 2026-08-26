@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
 import { authErrorMessage } from "@/lib/auth/errors";
-import { Button } from "@/components/ui/button";
+import { Button, buttonClasses } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { AuthField, FormError } from "./auth-field";
 import { GoogleButton, OrDivider } from "./google-button";
 
@@ -14,6 +15,10 @@ export function SignupForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // The address we've just emailed. Set means the account exists and the only
+  // thing left to do is open the link — so the form is replaced rather than
+  // left on screen inviting a second submission.
+  const [sentTo, setSentTo] = useState<string | null>(null);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -29,13 +34,12 @@ export function SignupForm() {
     setError(null);
     setPending(true);
 
+    const email = String(form.get("email") ?? "").trim();
+
     try {
-      await signUp(
-        String(form.get("name") ?? ""),
-        String(form.get("email") ?? "").trim(),
-        password,
-      );
-      router.replace("/dashboard");
+      await signUp(String(form.get("name") ?? ""), email, password);
+      setSentTo(email);
+      setPending(false);
     } catch (caught) {
       setError(authErrorMessage(caught));
       setPending(false);
@@ -52,6 +56,36 @@ export function SignupForm() {
       setError(authErrorMessage(caught));
       setPending(false);
     }
+  }
+
+  if (sentTo) {
+    return (
+      <div className="flex flex-col gap-4 text-center">
+        <span
+          aria-hidden
+          className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-muted text-muted"
+        >
+          <Icon name="mail" className="h-6 w-6" />
+        </span>
+        <div className="flex flex-col gap-1.5">
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">
+            Check your inbox
+          </h2>
+          <p className="text-sm text-muted">
+            We&apos;ve sent a verification link to{" "}
+            <span className="font-medium text-foreground">{sentTo}</span>. Open
+            it to confirm the address, then log in.
+          </p>
+        </div>
+        <Link href="/login" className={`${buttonClasses("primary", "md")} w-full`}>
+          Go to log in
+        </Link>
+        <p className="text-sm text-muted">
+          Nothing there? Check spam — or try logging in and we&apos;ll send
+          another.
+        </p>
+      </div>
+    );
   }
 
   return (

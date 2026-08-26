@@ -13,6 +13,7 @@ import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  sendEmailVerification,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
@@ -20,12 +21,15 @@ import {
   type User,
 } from "firebase/auth";
 import { auth } from "@/lib/firebase/client";
+import { EmailNotVerifiedError } from "./errors";
 
 type AuthContextValue = {
   user: User | null;
   /** True until Firebase has restored (or ruled out) a persisted session. */
   loading: boolean;
+  /** Creates the account, emails a verification link, and leaves them signed out. */
   signUp: (name: string, email: string, password: string) => Promise<void>;
+  /** Throws {@link EmailNotVerifiedError} until the address has been confirmed. */
   signIn: (email: string, password: string) => Promise<void>;
   /** Google OAuth popup — used for both sign-up and sign-in. */
   signInWithGoogle: () => Promise<void>;
@@ -55,19 +59,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email,
         password,
       );
+
       const displayName = name.trim();
-      if (displayName) {
-        await updateProfile(created, { displayName });
-        // updateProfile doesn't re-fire onAuthStateChanged, so publish the
-        // updated user ourselves.
-        setSession({ user: auth.currentUser });
-      }
+      if (displayName) await updateProfile(created, { displayName });
+
+      await sendEmailVerification(created);
+
+      // Firebase signs you in as a side effect of creating the account. That
+      // would walk an unverified address straight into the app, so the session
+      // is dropped again immediately: the link in the inbox is the only way in.
+      await signOut(auth);
     },
     [],
   );
 
   const signIn = useCallback(async (email: string, password: string) => {
-    await signInWithEmailAndPassword(auth, email, password);
+    const { user: signedIn } = await signInWithEmailAndPassword(
+      auth,
+      email,
+      password,
+    );
+
+    if (!signedIn.emailVerified) {
+      // Send a fresh link before backing out: someone typing their password
+      // into a login form is someone who wants in, and the original email is
+      // usually the one that got lost. A send that's rate-limited is not worth
+      // failing the attempt over — the refusal below is the real answer.
+      try {
+        await sendEmailVerification(signedIn);
+      } catch {
+        // Ignored deliberately.
+      }
+      await signOut(auth);
+      throw new EmailNotVerifiedError(signedIn.email ?? email);
+    }
   }, []);
 
   const signInWithGoogle = useCallback(async () => {
