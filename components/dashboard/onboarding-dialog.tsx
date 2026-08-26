@@ -18,6 +18,7 @@ import {
   ACCOUNT_TYPE_BLURBS,
   ACCOUNT_TYPE_ICONS,
   ACCOUNT_TYPE_LABELS,
+  isDebt,
   type Account,
   type AccountType,
 } from "@/lib/budget/types";
@@ -116,15 +117,22 @@ export function OnboardingDialog({
     // of accounts genuinely start empty.
     const parsed = chosen.map((entry) => {
       const raw = entry.balance.trim();
+      const cents = raw === "" ? 0 : parseBalanceToCents(raw);
       return {
         entry,
-        cents: raw === "" ? 0 : parseBalanceToCents(raw),
+        // A debt is typed as what you owe — a plain, positive number, the way
+        // a statement prints it — and stored as the negative balance it is.
+        cents: cents === null ? null : isDebt(entry.type) ? -cents : cents,
       };
     });
 
     const bad = parsed.find((row) => row.cents === null);
     if (bad) {
-      setError(`Enter ${bad.entry.name} as an amount, like 1250.00.`);
+      setError(
+        isDebt(bad.entry.type)
+          ? `Enter what you owe on ${bad.entry.name} as an amount, like 2400.00.`
+          : `Enter ${bad.entry.name} as an amount, like 1250.00.`,
+      );
       return;
     }
 
@@ -327,7 +335,11 @@ export function OnboardingDialog({
             key={entry.key}
             label={entry.name}
             htmlFor={`opening-${entry.key}`}
-            hint={ACCOUNT_TYPE_BLURBS[entry.type]}
+            hint={
+              isDebt(entry.type)
+                ? "How much you still owe on it"
+                : ACCOUNT_TYPE_BLURBS[entry.type]
+            }
           >
             <div className="flex items-center gap-2.5">
               <span
