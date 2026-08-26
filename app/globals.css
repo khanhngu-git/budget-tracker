@@ -152,6 +152,16 @@ dialog::backdrop {
   background: rgb(0 0 0 / 0.55);
 }
 
+/* The dialog is a container, not a control. It takes focus when it opens and
+   again whenever focus falls back to it — after a nested dialog closes, say —
+   and the accent ring above would then draw itself around the entire popup as
+   though the popup itself were the thing selected. Selection is shown on the
+   category tiles inside, and only there. */
+dialog:focus,
+dialog:focus-visible {
+  outline: none;
+}
+
 /* The date picker's own icon is invisible on a dark field. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) input[type="date"]::-webkit-calendar-picker-indicator {
@@ -163,4 +173,74 @@ dialog::backdrop {
 :root[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
   opacity: 0.6;
+}
+
+/* A tab strip that has to scroll on a phone shouldn't also grow a scrollbar
+   across the tabs it's trying to show. The edge fades in the markup are what
+   signal there's more to the side. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ── The opening splash ──────────────────────────────────────────────
+   Three bars finding their level, which is the same mark as the logo,
+   doing the one thing a budget chart does. */
+@keyframes splash-bar {
+  0%,
+  100% {
+    height: 0.75rem;
+    opacity: 0.45;
+  }
+  50% {
+    height: 2.5rem;
+    opacity: 1;
+  }
+}
+
+@keyframes splash-track {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+@keyframes splash-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+.splash-bar {
+  height: 0.75rem;
+  animation: splash-bar 1.1s ease-in-out infinite;
+}
+
+.splash-track {
+  animation: splash-track 1.3s ease-in-out infinite;
+}
+
+/* Held at the end so the curtain doesn't snap back for the frame between the
+   animation finishing and React unmounting it. */
+.splash-leaving {
+  animation: splash-out 450ms ease-out forwards;
+  pointer-events: none;
+}
+
+/* Motion is the whole point of this element, so it can't simply be switched
+   off — it's slowed to a pulse instead, and the curtain still fades. */
+@media (prefers-reduced-motion: reduce) {
+  .splash-bar {
+    height: 2.5rem;
+    animation: none;
+  }
+  .splash-track {
+    width: 100%;
+    animation: none;
+  }
 }
