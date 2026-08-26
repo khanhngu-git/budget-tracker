@@ -121,6 +121,20 @@ const PATHS = {
       <path d="M6.5 20v1.5M17.5 20v1.5" />
     </>
   ),
+  coins: (
+    <>
+      <ellipse cx="9" cy="7" rx="6" ry="3" />
+      <path d="M3 7v4c0 1.7 2.7 3 6 3s6-1.3 6-3V7" />
+      <path d="M15 11.2c3.4.3 6 1.5 6 2.8v4c0 1.7-2.7 3-6 3s-6-1.3-6-3v-4" />
+    </>
+  ),
+  bank: (
+    <>
+      <path d="M3 9.5 12 4l9 5.5" />
+      <path d="M5 9.5v9M10 9.5v9M14 9.5v9M19 9.5v9" />
+      <path d="M2.5 20.5h19" />
+    </>
+  ),
 
   // Ledger directions
   swap: (
