@@ -16,7 +16,8 @@ export function Section({
   children,
 }: {
   title: string;
-  subtitle?: string;
+  /** Takes a node, not just text, so a figure inside it can carry a tone. */
+  subtitle?: ReactNode;
   action?: ReactNode;
   divided?: boolean;
   children: ReactNode;

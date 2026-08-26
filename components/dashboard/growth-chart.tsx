@@ -1,9 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { balanceHistory, type BalancePoint } from "@/lib/budget/analytics";
+import {
+  balanceHistory,
+  type BalancePoint,
+  type HistoryPeriod,
+} from "@/lib/budget/analytics";
 import { formatMoney } from "@/lib/budget/format";
 import type { Deltas } from "@/lib/budget/ledger";
+import {
+  HISTORY_PERIOD_LABELS,
+  HISTORY_POINTS,
+} from "@/lib/budget/use-budget";
 import {
   SERIES_SLOTS,
   seriesColor,
@@ -96,29 +104,60 @@ function seriesFor(accounts: Account[], points: BalancePoint[]): Series[] {
   ];
 }
 
+const PERIODS = Object.keys(HISTORY_PERIOD_LABELS) as HistoryPeriod[];
+
+/** How the subtitle names the span the reader is looking at. */
+const SPAN_NOUN: Record<HistoryPeriod, string> = {
+  daily: "days",
+  weekly: "weeks",
+  monthly: "months",
+  yearly: "years",
+};
+
+/** What each point is a closing balance *of*. */
+const POINT_NOUN: Record<HistoryPeriod, string> = {
+  daily: "Closing balances day by day",
+  weekly: "Closing balances week by week",
+  monthly: "Closing balances month by month",
+  yearly: "Closing balances year by year",
+};
+
 export function GrowthChart({
   accounts,
   closingBalances,
   ledger,
   monthStart,
-  months,
+  period,
+  onPeriodChange,
   loading,
 }: {
   /** Accounts in display order — position is what fixes each one's colour. */
   accounts: Account[];
   /** What each account closed the viewed month at. */
   closingBalances: Deltas;
-  /** The loaded ledger window, at least `months` deep. */
+  /** The loaded ledger window, deep enough to cover `period`. */
   ledger: Transaction[];
   monthStart: Date;
-  months: number;
+  period: HistoryPeriod;
+  /** Lifted, because the choice decides how much ledger has to be loaded. */
+  onPeriodChange: (next: HistoryPeriod) => void;
   loading: boolean;
 }) {
   const [active, setActive] = useState<number | null>(null);
+  // Hidden rather than removed: a series keeps its slot and its colour while
+  // it's off, so toggling it back on doesn't repaint the ones still showing.
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
 
   const points = useMemo(
-    () => balanceHistory(closingBalances, monthStart, ledger, months),
-    [closingBalances, monthStart, ledger, months],
+    () =>
+      balanceHistory(
+        closingBalances,
+        monthStart,
+        ledger,
+        period,
+        HISTORY_POINTS[period],
+      ),
+    [closingBalances, monthStart, ledger, period],
   );
 
   const series = useMemo(
@@ -126,7 +165,20 @@ export function GrowthChart({
     [accounts, points],
   );
 
-  const everyValue = series.flatMap((entry) => entry.values);
+  const shown = series.filter((entry) => !hidden.has(entry.id));
+
+  function toggle(id: string) {
+    setHidden((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }
+
+  // The axis follows what's on screen. Scaling to the hidden series too would
+  // make hiding the total pointless — the whole reason to drop it is to get a
+  // scale the smaller accounts can actually be read against.
+  const everyValue = shown.flatMap((entry) => entry.values);
   const ticks = ticksFor(Math.min(...everyValue, 0), Math.max(...everyValue, 0));
   const low = ticks[0];
   const high = ticks[ticks.length - 1];
@@ -143,31 +195,64 @@ export function GrowthChart({
   const latest = points[points.length - 1];
   const earliest = points[0];
   const change = latest.totalCents - earliest.totalCents;
-  const flat = everyValue.every((value) => value === 0);
+  const flat = series
+    .flatMap((entry) => entry.values)
+    .every((value) => value === 0);
 
-  // Month labels thin out so they never collide, counted back from the right:
-  // the month on screen is the one the reader came for, so it always keeps its
-  // tick and the gaps fall further back in the history.
-  const labelEvery = points.length > 8 ? 2 : 1;
+  // Axis labels thin out so they never collide, counted back from the right:
+  // the period on screen is the one the reader came for, so it always keeps
+  // its tick and the gaps fall further back in the history.
+  const labelEvery = Math.ceil(points.length / 8);
   const labelled = (index: number) =>
     (points.length - 1 - index) % labelEvery === 0;
   const readout = active === null ? latest : points[active];
 
   return (
     <section className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-6">
-      <div className="flex flex-col gap-1">
-        <h3 className="text-[0.9375rem] font-semibold tracking-tight text-foreground">
-          How your accounts have grown
-        </h3>
-        <p className="text-sm text-muted">
-          {loading
-            ? "Loading your history…"
-            : flat
-              ? "Once you've recorded a couple of months, the trend shows up here."
-              : `Closing balances month by month. Over these ${points.length} months you're ${
-                  change > 0 ? "up" : change < 0 ? "down" : "level at"
-                } ${formatMoney(Math.abs(change) || latest.totalCents)}.`}
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-1">
+          <h3 className="text-[0.9375rem] font-semibold tracking-tight text-foreground">
+            How your accounts have grown
+          </h3>
+          <p className="text-sm text-muted">
+            {loading
+              ? "Loading your history…"
+              : flat
+                ? "Once you've recorded a couple of entries, the trend shows up here."
+                : `${POINT_NOUN[period]}. Over these ${points.length} ${
+                    SPAN_NOUN[period]
+                  } you're ${
+                    change > 0 ? "up" : change < 0 ? "down" : "level at"
+                  } ${formatMoney(Math.abs(change) || latest.totalCents)}.`}
+          </p>
+        </div>
+
+        {/* One row of periods rather than a select: there are only four, and
+            seeing which others exist is half of why anyone changes it. */}
+        <div
+          role="group"
+          aria-label="Time period"
+          className="flex shrink-0 gap-0.5 rounded-lg border border-border bg-surface-muted p-0.5"
+        >
+          {PERIODS.map((option) => {
+            const selected = option === period;
+            return (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => onPeriodChange(option)}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                  selected
+                    ? "bg-surface text-foreground shadow-sm"
+                    : "text-muted hover:text-foreground"
+                }`}
+              >
+                {HISTORY_PERIOD_LABELS[option]}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {loading ? null : (
@@ -177,7 +262,7 @@ export function GrowthChart({
               viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
               className="h-auto w-full touch-none"
               role="img"
-              aria-label={`Closing balance for each account from ${earliest.label} to ${latest.label}. Everything: ${formatMoney(
+              aria-label={`Closing balance for each account from ${earliest.caption} to ${latest.caption}. Everything: ${formatMoney(
                 latest.totalCents,
               )}.`}
               onPointerLeave={() => setActive(null)}
@@ -216,7 +301,7 @@ export function GrowthChart({
               {points.map((point, index) =>
                 labelled(index) ? (
                   <text
-                    key={point.monthStart.getTime()}
+                    key={point.start.getTime()}
                     x={x(index)}
                     y={HEIGHT - 10}
                     textAnchor="middle"
@@ -240,7 +325,7 @@ export function GrowthChart({
                 />
               ) : null}
 
-              {series.map((entry) => (
+              {shown.map((entry) => (
                 <path
                   key={entry.id}
                   d={path(entry.values)}
@@ -258,7 +343,7 @@ export function GrowthChart({
                   every line would bury the lines themselves. The surface ring
                   keeps two coincident dots legible where accounts cross. */}
               {active !== null
-                ? series.map((entry) => (
+                ? shown.map((entry) => (
                     <circle
                       key={entry.id}
                       cx={x(active)}
@@ -278,35 +363,57 @@ export function GrowthChart({
               in view — identity is never colour alone, and the figures stay
               readable without hovering. */}
           <ul className="flex flex-col gap-1.5 border-t border-border pt-4">
-            <li className="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted">
-              {readout.label} {readout.monthStart.getFullYear()}
+            <li className="mb-0.5 flex items-baseline justify-between gap-3 px-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted">
+                {readout.caption}
+              </span>
+              <span className="text-xs text-muted">Tap a row to hide it</span>
             </li>
-            {series.map((entry) => (
-              <li key={entry.id} className="flex items-center gap-3">
-                <span
-                  aria-hidden
-                  className="h-0.5 w-4 shrink-0 rounded-full"
-                  style={{
-                    backgroundColor: entry.color,
-                    opacity: entry.aggregate ? 0.7 : 1,
-                  }}
-                />
-                <span
-                  className={`min-w-0 flex-1 truncate text-sm ${
-                    entry.aggregate
-                      ? "font-medium text-foreground"
-                      : "text-muted"
-                  }`}
-                >
-                  {entry.label}
-                </span>
-                <span className="shrink-0 text-sm font-medium tabular-nums text-foreground">
-                  {formatMoney(
-                    entry.values[active ?? entry.values.length - 1],
-                  )}
-                </span>
-              </li>
-            ))}
+            {series.map((entry) => {
+              const off = hidden.has(entry.id);
+              return (
+                <li key={entry.id}>
+                  {/* The legend is the control: the thing naming a line is the
+                      obvious place to click to hide it, and it keeps the
+                      figures reachable either way. */}
+                  <button
+                    type="button"
+                    onClick={() => toggle(entry.id)}
+                    aria-pressed={!off}
+                    className="flex w-full items-center gap-3 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-surface-muted"
+                  >
+                    <span
+                      aria-hidden
+                      className="h-0.5 w-4 shrink-0 rounded-full"
+                      style={{
+                        backgroundColor: off ? "var(--border)" : entry.color,
+                        opacity: entry.aggregate && !off ? 0.7 : 1,
+                      }}
+                    />
+                    <span
+                      className={`min-w-0 flex-1 truncate text-sm ${
+                        off
+                          ? "text-muted line-through decoration-muted/70"
+                          : entry.aggregate
+                            ? "font-medium text-foreground"
+                            : "text-muted"
+                      }`}
+                    >
+                      {entry.label}
+                    </span>
+                    <span
+                      className={`shrink-0 text-sm font-medium tabular-nums ${
+                        off ? "text-muted/60" : "text-foreground"
+                      }`}
+                    >
+                      {formatMoney(
+                        entry.values[active ?? entry.values.length - 1],
+                      )}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </>
       )}

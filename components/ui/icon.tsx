@@ -121,6 +121,12 @@ const PATHS = {
       <path d="M6.5 20v1.5M17.5 20v1.5" />
     </>
   ),
+  mail: (
+    <>
+      <rect x="2.5" y="5" width="19" height="14" rx="2" />
+      <path d="M3 7l9 6 9-6" />
+    </>
+  ),
   coins: (
     <>
       <ellipse cx="9" cy="7" rx="6" ry="3" />
