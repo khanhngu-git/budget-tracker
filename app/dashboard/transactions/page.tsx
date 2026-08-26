@@ -19,9 +19,8 @@ export default function TransactionsPage() {
   const {
     uid,
     liveAccounts,
+    accountsById,
     transactions,
-    totalCents,
-    openingTotalCents,
     loading,
     monthStart,
   } = useBudgetContext();
@@ -33,33 +32,21 @@ export default function TransactionsPage() {
   const { incomeCents, expenseCents, netCents } = summariseMonth(transactions);
   const monthLabel = formatMonthLabel(monthStart);
 
-  const figures = [
-    { label: "Money in", value: formatMoney(incomeCents), tone: "text-foreground" },
-    { label: "Money out", value: formatMoney(expenseCents), tone: "text-foreground" },
-    {
-      label: "Net for the month",
-      value: formatSignedMoney(netCents),
-      tone:
-        netCents > 0
-          ? "text-positive"
-          : netCents < 0
-            ? "text-negative"
-            : "text-foreground",
-    },
-  ];
-
   return (
     <>
       <Section
         title={`Everything in ${monthLabel}`}
+        // This page is the ledger, not a dashboard. The month's shape belongs
+        // on Overview, where there's room to explain it; here it's one line so
+        // the entries themselves start as high up the page as possible.
         subtitle={
           transactions.length === 0
             ? "Nothing recorded this month."
             : `${transactions.length} ${
                 transactions.length === 1 ? "entry" : "entries"
-              } · balance went from ${formatMoney(
-                openingTotalCents,
-              )} to ${formatMoney(totalCents)}.`
+              } · ${formatMoney(incomeCents)} in, ${formatMoney(
+                expenseCents,
+              )} out, ${formatSignedMoney(netCents)} net.`
         }
         action={
           <Button
@@ -71,24 +58,10 @@ export default function TransactionsPage() {
           </Button>
         }
       >
-        {/* Net is the number this page is really asked for: did the month
-            leave you ahead or behind? Income and expenses are the workings. */}
-        <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">
-          {figures.map((figure) => (
-            <div key={figure.label} className="bg-surface px-5 py-4">
-              <dt className="text-xs text-muted">{figure.label}</dt>
-              <dd
-                className={`mt-1 text-xl font-semibold tracking-tight ${figure.tone}`}
-              >
-                {figure.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-
         <TransactionList
           uid={uid}
           transactions={transactions}
+          accounts={accountsById}
           loading={loading}
           onEdit={(transaction) => setDialog({ transaction })}
         />

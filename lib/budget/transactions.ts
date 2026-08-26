@@ -1,6 +1,5 @@
 import {
   Timestamp,
-  collection,
   doc,
   onSnapshot,
   orderBy,
@@ -8,156 +7,38 @@ import {
   runTransaction,
   serverTimestamp,
   where,
+  type DocumentData,
   type QueryDocumentSnapshot,
   type Transaction as FirestoreTransaction,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { accountDoc } from "./accounts";
+import { BudgetError } from "./error";
 import {
-  ACCOUNT_KINDS,
-  ACCOUNT_LABELS,
-  type AccountKind,
-  type Transaction,
-  type TransactionKind,
-} from "./types";
+  deltasForInput,
+  deltasFor,
+  type Deltas,
+  type EntryInput,
+} from "./ledger";
+import { accountDoc, transactionsPath } from "./paths";
+import type { Transaction, TransactionKind } from "./types";
 
-export function transactionsPath(uid: string) {
-  return collection(db, "users", uid, "transactions");
+export { transactionsPath };
+export { BudgetError };
+export type { EntryInput };
+
+function readBalance(data: DocumentData | undefined): number {
+  return typeof data?.balanceCents === "number" ? data.balanceCents : 0;
 }
 
-/** Thrown for rule violations we want to surface verbatim in the UI. */
-export class BudgetError extends Error {}
-
-function readBalance(data: unknown): number {
-  const balance = (data as { balanceCents?: unknown } | undefined)?.balanceCents;
-  return typeof balance === "number" ? balance : 0;
-}
-
-/** Narrows an arbitrary stored value to one of the three known accounts. */
-function toAccountKind(value: unknown): AccountKind | null {
-  return ACCOUNT_KINDS.includes(value as AccountKind)
-    ? (value as AccountKind)
-    : null;
-}
-
-/**
- * Everything a ledger entry needs to say, in the shape the caller supplies it.
- * Amounts are always positive; `kind` carries the direction.
- */
-export type EntryInput =
-  | {
-      kind: "income" | "expense";
-      amountCents: number;
-      categoryId: string;
-      note: string;
-      date: Date;
-    }
-  | {
-      kind: "transfer";
-      accountId: AccountKind;
-      toAccountId: AccountKind;
-      amountCents: number;
-      note: string;
-      date: Date;
-    }
-  | {
-      kind: "gain" | "loss";
-      accountId: AccountKind;
-      amountCents: number;
-      note: string;
-      date: Date;
-    };
-
-type Deltas = Partial<Record<AccountKind, number>>;
-
-/** Public alias for the same shape, for callers outside this module. */
-export type AccountDeltas = Deltas;
-
-/**
- * How one entry moves each account, in cents.
- *
- * Every mutation in this file is expressed through this one function: adding
- * applies the deltas, deleting applies their negation, and editing applies the
- * difference between old and new. That's what keeps a five-way edit — change
- * the amount, the category and the account at once — from needing its own
- * hand-written balance arithmetic that could drift from the delete path.
- */
-function deltasFor(
-  kind: TransactionKind,
-  accountId: AccountKind,
-  toAccountId: AccountKind | null,
-  amountCents: number,
-): Deltas {
-  switch (kind) {
-    case "income":
-    case "gain":
-      return { [accountId]: amountCents };
-    case "expense":
-    case "loss":
-      return { [accountId]: -amountCents };
-    case "transfer":
-      if (!toAccountId) return {};
-      return accountId === toAccountId
-        ? {}
-        : { [accountId]: -amountCents, [toAccountId]: amountCents };
-  }
-}
-
-/**
- * The same arithmetic, for an entry that has already been loaded.
- *
- * The month views derive their balances by replaying these deltas, so read and
- * write agree on what an entry means by sharing one definition rather than two
- * that have to be kept in step.
- */
-export function transactionDeltas(transaction: Transaction): AccountDeltas {
-  return deltasFor(
-    transaction.kind,
-    transaction.accountId,
-    transaction.toAccountId,
-    transaction.amountCents,
-  );
-}
-
-function deltasForInput(input: EntryInput): Deltas {
-  switch (input.kind) {
-    case "income":
-    case "expense":
-      return deltasFor(input.kind, "spending", null, input.amountCents);
-    case "transfer":
-      return deltasFor(
-        input.kind,
-        input.accountId,
-        input.toAccountId,
-        input.amountCents,
-      );
-    case "gain":
-    case "loss":
-      return deltasFor(input.kind, input.accountId, null, input.amountCents);
-  }
-}
-
-/** The deltas an already-stored entry applied when it was written. */
-function deltasForStored(data: Record<string, unknown>): Deltas {
-  const accountId = toAccountKind(data.accountId);
-  if (!accountId) throw new BudgetError("That entry can't be changed.");
-
-  const kind = data.kind as TransactionKind;
-  const amountCents =
-    typeof data.amountCents === "number" ? data.amountCents : 0;
-
-  if (kind === "transfer") {
-    const toAccountId = toAccountKind(data.toAccountId);
-    if (!toAccountId) throw new BudgetError("That entry can't be changed.");
-    return deltasFor(kind, accountId, toAccountId, amountCents);
-  }
-
-  return deltasFor(kind, accountId, null, amountCents);
+/** Narrows a stored value to something that could be an account id. */
+function toAccountId(value: unknown): string | null {
+  return typeof value === "string" && value !== "" ? value : null;
 }
 
 function documentFor(input: EntryInput) {
   const shared = {
     kind: input.kind,
+    accountId: input.accountId,
     amountCents: input.amountCents,
     note: input.note,
     date: Timestamp.fromDate(input.date),
@@ -166,33 +47,43 @@ function documentFor(input: EntryInput) {
   switch (input.kind) {
     case "income":
     case "expense":
-      return {
-        ...shared,
-        accountId: "spending",
-        toAccountId: null,
-        categoryId: input.categoryId,
-      };
+      return { ...shared, toAccountId: null, categoryId: input.categoryId };
     case "transfer":
       return {
         ...shared,
-        accountId: input.accountId,
         toAccountId: input.toAccountId,
         categoryId: null,
       };
     case "gain":
     case "loss":
-      return {
-        ...shared,
-        accountId: input.accountId,
-        toAccountId: null,
-        categoryId: null,
-      };
+      return { ...shared, toAccountId: null, categoryId: null };
   }
+}
+
+/** The deltas an already-stored entry applied when it was written. */
+function deltasForStored(data: DocumentData): Deltas {
+  const accountId = toAccountId(data.accountId);
+  if (!accountId) throw new BudgetError("That entry can't be changed.");
+
+  const kind = data.kind as TransactionKind;
+  const amountCents =
+    typeof data.amountCents === "number" ? data.amountCents : 0;
+
+  if (kind === "transfer") {
+    const toId = toAccountId(data.toAccountId);
+    if (!toId) throw new BudgetError("That entry can't be changed.");
+    return deltasFor(kind, accountId, toId, amountCents);
+  }
+
+  return deltasFor(kind, accountId, null, amountCents);
 }
 
 function validate(input: EntryInput) {
   if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
     throw new BudgetError("Enter an amount greater than zero.");
+  }
+  if (!input.accountId) {
+    throw new BudgetError("Pick an account for this entry.");
   }
   if (input.kind === "transfer" && input.accountId === input.toAccountId) {
     throw new BudgetError("Pick two different accounts.");
@@ -211,22 +102,25 @@ async function settleBalances(
   after: Deltas,
   next: EntryInput | null,
 ) {
-  const net = new Map<AccountKind, number>();
-  for (const kind of ACCOUNT_KINDS) {
-    const change = (after[kind] ?? 0) - (before[kind] ?? 0);
-    if (change !== 0) net.set(kind, change);
+  const net = new Map<string, number>();
+  for (const accountId of new Set([
+    ...Object.keys(before),
+    ...Object.keys(after),
+  ])) {
+    const change = (after[accountId] ?? 0) - (before[accountId] ?? 0);
+    if (change !== 0) net.set(accountId, change);
   }
   if (net.size === 0) return;
 
   const touched = [...net.keys()];
-  const refs = touched.map((kind) => accountDoc(uid, kind));
+  const refs = touched.map((accountId) => accountDoc(uid, accountId));
   const snapshots = await Promise.all(refs.map((ref) => tx.get(ref)));
 
-  const resulting = new Map<AccountKind, number>();
-  touched.forEach((kind, index) => {
+  const resulting = new Map<string, number>();
+  touched.forEach((accountId, index) => {
     resulting.set(
-      kind,
-      readBalance(snapshots[index].data()) + (net.get(kind) ?? 0),
+      accountId,
+      readBalance(snapshots[index].data()) + (net.get(accountId) ?? 0),
     );
   });
 
@@ -236,16 +130,19 @@ async function settleBalances(
   if (next?.kind === "transfer") {
     const source = resulting.get(next.accountId);
     if (source !== undefined && source < 0) {
-      throw new BudgetError(
-        `${ACCOUNT_LABELS[next.accountId]} doesn't have enough to transfer.`,
-      );
+      const index = touched.indexOf(next.accountId);
+      const stored = snapshots[index]?.data()?.name;
+      const name = typeof stored === "string" && stored ? stored : "That account";
+      throw new BudgetError(`${name} doesn't have enough to transfer.`);
     }
   }
 
-  touched.forEach((kind, index) => {
+  touched.forEach((accountId, index) => {
+    // Merged, never replaced: the account's name and type are the user's and
+    // have nothing to do with settling a balance.
     tx.set(
       refs[index],
-      { kind, balanceCents: resulting.get(kind) ?? 0 },
+      { balanceCents: resulting.get(accountId) ?? 0 },
       { merge: true },
     );
   });
@@ -334,7 +231,7 @@ export async function deleteTransaction(
  */
 export async function adjustAccountBalance(
   uid: string,
-  accountId: AccountKind,
+  accountId: string,
   input: { differenceCents: number; note: string; date: Date },
 ): Promise<void> {
   if (input.differenceCents === 0) {
@@ -360,38 +257,35 @@ export async function adjustAccountBalance(
  * Sets every account to the balance the user says it holds, recording each
  * difference as a gain or a loss.
  *
- * All three move in one transaction: a half-applied opening balance would
- * leave the books wrong with no obvious way for the user to tell which
- * accounts had taken and which hadn't.
+ * They all move in one transaction: a half-applied opening balance would leave
+ * the books wrong with no obvious way for the user to tell which accounts had
+ * taken and which hadn't.
  */
 export async function setAccountBalances(
   uid: string,
-  targets: Record<AccountKind, number>,
+  targets: Record<string, number>,
   input: { note: string; date: Date },
 ): Promise<void> {
-  for (const kind of ACCOUNT_KINDS) {
-    if (!Number.isInteger(targets[kind])) {
+  const entries = Object.entries(targets);
+  for (const [, cents] of entries) {
+    if (!Number.isInteger(cents)) {
       throw new BudgetError("Enter each balance as an amount, like 1250.00.");
     }
   }
 
   await runTransaction(db, async (tx) => {
-    const refs = ACCOUNT_KINDS.map((kind) => accountDoc(uid, kind));
+    const refs = entries.map(([accountId]) => accountDoc(uid, accountId));
     const snapshots = await Promise.all(refs.map((ref) => tx.get(ref)));
 
-    ACCOUNT_KINDS.forEach((kind, index) => {
-      const difference = targets[kind] - readBalance(snapshots[index].data());
+    entries.forEach(([accountId, target], index) => {
+      const difference = target - readBalance(snapshots[index].data());
       if (difference === 0) return;
 
-      tx.set(
-        refs[index],
-        { kind, balanceCents: targets[kind] },
-        { merge: true },
-      );
+      tx.set(refs[index], { balanceCents: target }, { merge: true });
       tx.set(doc(transactionsPath(uid)), {
         ...documentFor({
           kind: difference > 0 ? "gain" : "loss",
-          accountId: kind,
+          accountId,
           amountCents: Math.abs(difference),
           note: input.note,
           date: input.date,
@@ -405,10 +299,11 @@ export async function setAccountBalances(
 /**
  * Live feed of everything recorded from `from` onward.
  *
- * Month balances are derived by taking the running account total and undoing
- * everything dated after the month being viewed. That's what makes a past
- * month immovable: adding an August expense lowers the running total and grows
- * this set by the same entry, so July's closing balance comes out unchanged.
+ * One window serves three jobs: the month on screen, everything after it (which
+ * is what makes a past month immovable — the running total is rewound by it),
+ * and the year of history the growth chart plots. Deriving all three from a
+ * single subscription keeps them consistent by construction and costs one
+ * listener instead of three overlapping ones.
  */
 export function subscribeTransactionsFrom(
   uid: string,
@@ -427,41 +322,12 @@ export function subscribeTransactionsFrom(
   );
 }
 
-/**
- * Live transaction feed for a single month. The range and the sort are both on
- * `date`, which Firestore serves from its automatic single-field index — no
- * composite index to create.
- */
-export function subscribeMonthTransactions(
-  uid: string,
-  monthStart: Date,
-  onChange: (transactions: Transaction[]) => void,
-  onError: (error: unknown) => void,
-) {
-  const monthEnd = new Date(
-    monthStart.getFullYear(),
-    monthStart.getMonth() + 1,
-    1,
-  );
-
-  return onSnapshot(
-    query(
-      transactionsPath(uid),
-      where("date", ">=", Timestamp.fromDate(monthStart)),
-      where("date", "<", Timestamp.fromDate(monthEnd)),
-      orderBy("date", "desc"),
-    ),
-    (snapshot) => onChange(snapshot.docs.map(toTransaction)),
-    onError,
-  );
-}
-
 function toTransaction(document: QueryDocumentSnapshot): Transaction {
   const data = document.data();
   return {
     id: document.id,
     kind: data.kind,
-    accountId: data.accountId,
+    accountId: data.accountId ?? "",
     toAccountId: data.toAccountId ?? null,
     amountCents: data.amountCents ?? 0,
     categoryId: data.categoryId ?? null,

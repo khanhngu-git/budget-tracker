@@ -5,7 +5,10 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { categoryIcon, categoryLabel } from "@/lib/budget/categories";
 import { formatDay, formatMoney } from "@/lib/budget/format";
 import { BudgetError, deleteTransaction } from "@/lib/budget/transactions";
-import { ACCOUNT_LABELS, type Transaction } from "@/lib/budget/types";
+import { isEveryday, type Account, type Transaction } from "@/lib/budget/types";
+
+/** Accounts by id, so a row can name the account it moved. */
+type AccountLookup = Record<string, Account>;
 
 function amountDisplay(transaction: Transaction) {
   switch (transaction.kind) {
@@ -30,25 +33,47 @@ function amountDisplay(transaction: Transaction) {
   }
 }
 
-function describe(transaction: Transaction): string {
+/** An account that has since been renamed still has to render as something. */
+function nameOf(accounts: AccountLookup, id: string | null): string {
+  if (!id) return "—";
+  return accounts[id]?.name ?? "Closed account";
+}
+
+function describe(transaction: Transaction, accounts: AccountLookup): string {
   switch (transaction.kind) {
     case "transfer":
-      return `${ACCOUNT_LABELS[transaction.accountId]} → ${
-        transaction.toAccountId ? ACCOUNT_LABELS[transaction.toAccountId] : "—"
-      }`;
-    // Savings and investments genuinely grow on their own; a change to
-    // Spending is someone correcting the number, so it says so.
+      return `${nameOf(accounts, transaction.accountId)} → ${nameOf(
+        accounts,
+        transaction.toAccountId,
+      )}`;
+    // Savings and investments genuinely grow on their own; a change to an
+    // everyday account is someone correcting the number, so it says so.
     case "gain":
-      return transaction.accountId === "spending"
-        ? "Spending adjusted"
-        : `${ACCOUNT_LABELS[transaction.accountId]} growth`;
-    case "loss":
-      return transaction.accountId === "spending"
-        ? "Spending adjusted"
-        : `${ACCOUNT_LABELS[transaction.accountId]} loss`;
+    case "loss": {
+      const account = accounts[transaction.accountId];
+      const name = nameOf(accounts, transaction.accountId);
+      if (account && isEveryday(account.type)) return `${name} adjusted`;
+      return `${name} ${transaction.kind === "gain" ? "growth" : "loss"}`;
+    }
     default:
       return categoryLabel(transaction.categoryId);
   }
+}
+
+/**
+ * The quiet second line: when, out of which account, and the note. With more
+ * than one everyday account on the books, "which one" is the difference
+ * between a coffee from the coin jar and one off the card.
+ */
+function detailLine(transaction: Transaction, accounts: AccountLookup): string {
+  const parts = [formatDay(transaction.date)];
+
+  if (transaction.kind === "income" || transaction.kind === "expense") {
+    parts.push(nameOf(accounts, transaction.accountId));
+  }
+  if (transaction.note) parts.push(transaction.note);
+
+  return parts.join(" · ");
 }
 
 function iconFor(transaction: Transaction): IconName {
@@ -67,11 +92,13 @@ function iconFor(transaction: Transaction): IconName {
 export function TransactionList({
   uid,
   transactions,
+  accounts,
   loading,
   onEdit,
 }: {
   uid: string | null;
   transactions: Transaction[];
+  accounts: AccountLookup;
   loading: boolean;
   onEdit: (transaction: Transaction) => void;
 }) {
@@ -138,7 +165,7 @@ export function TransactionList({
       <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
         {transactions.map((transaction) => {
           const amount = amountDisplay(transaction);
-          const label = describe(transaction);
+          const label = describe(transaction, accounts);
           const confirming = confirmingId === transaction.id;
           const pending = pendingId === transaction.id;
 
@@ -159,8 +186,7 @@ export function TransactionList({
                   {label}
                 </p>
                 <p className="truncate text-xs text-muted">
-                  {formatDay(transaction.date)}
-                  {transaction.note ? ` · ${transaction.note}` : ""}
+                  {detailLine(transaction, accounts)}
                 </p>
               </div>
 
