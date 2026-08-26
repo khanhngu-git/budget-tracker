@@ -36,6 +36,18 @@ expect to earn, and the allocation bar shows the month's income target split
 into the parts it's been promised to — green for saving, violet for investing,
 orange for spending limits — with the tail nobody has claimed yet.
 
+**Recurring entries.** Salary, rent, subscriptions — set **Repeat** on an
+ordinary entry and pick a frequency (weekly, fortnightly, monthly or yearly)
+and either an end date or *until further notice*. The entry in front of you is
+the first occurrence; the schedule takes over from the next one. Everything
+currently repeating is listed behind **Recurring** on the Transactions page,
+where each one can be edited, paused or deleted. There is no server, so occurrences are posted the
+next time the app is opened on or after the day they fell due, dated the day
+they were due rather than the day they were noticed. Each rule advances its own
+`lastRunDate` inside the same transaction that writes its entries, so a second
+tab or a reload can't double-post the rent. Rules can be paused, and deleting
+one leaves the entries it has already posted alone.
+
 **Categories you pick by looking.** Around forty categories across nine groups,
 chosen from a searchable grid of icons rather than a dropdown.
 
@@ -156,6 +168,13 @@ Every balance in the app comes out of this one function.
 mutation runs in a transaction that settles the affected accounts and writes the
 entry together, so an entry can never land without its balance change.
 
+**`lib/budget/recurrence.ts`** — when a schedule falls due, with no Firestore
+in sight. Occurrences are measured from the rule's start date rather than
+stepped off the previous one, which is what keeps a rule anchored on the 31st
+landing on the 31st instead of clamping to February's 28th and carrying that
+forward forever. Weekly and fortnightly use day arithmetic, not milliseconds,
+so a daylight-saving change can't shift one onto the wrong date.
+
 **`lib/budget/analytics.ts`** — pure functions over accounts, entries and goals:
 month summaries, goal progress, the category breakdown, the growth series and
 the allocation breakdown. No I/O, so it can be reasoned about on its own.
@@ -177,6 +196,10 @@ users/{uid}/accounts/{accountId}            name, type, balanceCents, order
 users/{uid}/transactions/{transactionId}    kind, accountId, toAccountId,
                                             amountCents, categoryId, note, date
 users/{uid}/budgets/{YYYY-MM}/goals/{id}    scope, categoryId, amountCents
+users/{uid}/recurring/{ruleId}              kind, accountId, toAccountId,
+                                            categoryId, amountCents, note,
+                                            frequency, startDate, endDate,
+                                            lastRunDate, active
 ```
 
 Money is integer cents everywhere and is only divided by 100 at the point it is
