@@ -4,22 +4,15 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, TextInput } from "@/components/ui/field";
-import { Icon, type IconName } from "@/components/ui/icon";
+import { Icon } from "@/components/ui/icon";
 import { parseBalanceToCents } from "@/lib/budget/format";
 import { markOpeningBalancesSet } from "@/lib/budget/profile";
 import { BudgetError, setAccountBalances } from "@/lib/budget/transactions";
 import {
-  ACCOUNT_BLURBS,
-  ACCOUNT_KINDS,
-  ACCOUNT_LABELS,
-  type AccountKind,
+  ACCOUNT_TYPE_BLURBS,
+  ACCOUNT_TYPE_ICONS,
+  type Account,
 } from "@/lib/budget/types";
-
-const ACCOUNT_ICON: Record<AccountKind, IconName> = {
-  spending: "wallet",
-  savings: "vault",
-  investments: "trendUp",
-};
 
 /**
  * The one-time prompt a new account opens with.
@@ -34,35 +27,33 @@ const ACCOUNT_ICON: Record<AccountKind, IconName> = {
  */
 export function OpeningBalancesDialog({
   uid,
+  accounts,
   open,
   onClose,
 }: {
   uid: string;
+  accounts: Account[];
   open: boolean;
   onClose: () => void;
 }) {
-  const [amounts, setAmounts] = useState<Record<AccountKind, string>>({
-    spending: "",
-    savings: "",
-    investments: "",
-  });
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<"save" | "skip" | null>(null);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const targets = {} as Record<AccountKind, number>;
-    for (const kind of ACCOUNT_KINDS) {
+    const targets: Record<string, number> = {};
+    for (const account of accounts) {
       // A blank field means "nothing in it" rather than an error — most people
-      // won't have all three.
-      const raw = amounts[kind].trim();
+      // won't have money in every account.
+      const raw = (amounts[account.id] ?? "").trim();
       const cents = raw === "" ? 0 : parseBalanceToCents(raw);
       if (cents === null) {
-        setError(`Enter ${ACCOUNT_LABELS[kind]} as an amount, like 1250.00.`);
+        setError(`Enter ${account.name} as an amount, like 1250.00.`);
         return;
       }
-      targets[kind] = cents;
+      targets[account.id] = cents;
     }
 
     setError(null);
@@ -102,33 +93,36 @@ export function OpeningBalancesDialog({
       open={open}
       onClose={onClose}
       title="What have you got right now?"
-      description="Enter what each account holds today. You can change any of them later, and leaving one blank just means it's empty."
+      description="Enter what each account holds today. You can change any of them later, add more accounts at any time, and leaving one blank just means it's empty."
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        {ACCOUNT_KINDS.map((kind) => (
+        {accounts.map((account, index) => (
           <Field
-            key={kind}
-            label={ACCOUNT_LABELS[kind]}
-            htmlFor={`opening-${kind}`}
-            hint={ACCOUNT_BLURBS[kind]}
+            key={account.id}
+            label={account.name}
+            htmlFor={`opening-${account.id}`}
+            hint={ACCOUNT_TYPE_BLURBS[account.type]}
           >
             <div className="flex items-center gap-2.5">
               <span
                 aria-hidden
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-muted text-muted"
               >
-                <Icon name={ACCOUNT_ICON[kind]} className="h-4.5 w-4.5" />
+                <Icon
+                  name={ACCOUNT_TYPE_ICONS[account.type]}
+                  className="h-4.5 w-4.5"
+                />
               </span>
               <TextInput
-                id={`opening-${kind}`}
-                autoFocus={kind === "spending"}
+                id={`opening-${account.id}`}
+                autoFocus={index === 0}
                 inputMode="decimal"
                 placeholder="0.00"
-                value={amounts[kind]}
+                value={amounts[account.id] ?? ""}
                 onChange={(event) =>
                   setAmounts((current) => ({
                     ...current,
-                    [kind]: event.target.value,
+                    [account.id]: event.target.value,
                   }))
                 }
                 disabled={pending !== null}

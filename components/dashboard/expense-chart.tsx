@@ -79,7 +79,7 @@ export function ExpenseChart({
                     className="h-full rounded-r-[4px] transition-[opacity,width] duration-150"
                     style={{
                       width: `${maxCents === 0 ? 0 : (row.amountCents / maxCents) * 100}%`,
-                      backgroundColor: "var(--series-spending)",
+                      backgroundColor: "var(--series-1)",
                       opacity: dimmed ? 0.35 : 1,
                     }}
                   />

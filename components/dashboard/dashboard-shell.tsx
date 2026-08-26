@@ -28,8 +28,14 @@ const TABS = [
  */
 export function DashboardShell({ children }: { children: ReactNode }) {
   const { user, logOut } = useAuth();
-  const { uid, monthStart, setMonthStart, needsOpeningBalances, error } =
-    useBudgetContext();
+  const {
+    uid,
+    liveAccounts,
+    monthStart,
+    setMonthStart,
+    needsOpeningBalances,
+    error,
+  } = useBudgetContext();
   // Dismissing leaves the flag unset, so the prompt returns next session
   // rather than being lost to a stray Escape.
   const [dismissed, setDismissed] = useState(false);
@@ -109,6 +115,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       {uid && needsOpeningBalances && !dismissed ? (
         <OpeningBalancesDialog
           uid={uid}
+          accounts={liveAccounts}
           open
           onClose={() => setDismissed(true)}
         />

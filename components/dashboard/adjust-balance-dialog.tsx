@@ -14,7 +14,7 @@ import {
   toDateInputValue,
 } from "@/lib/budget/format";
 import { BudgetError, adjustAccountBalance } from "@/lib/budget/transactions";
-import { ACCOUNT_LABELS, type AccountKind } from "@/lib/budget/types";
+import type { Account } from "@/lib/budget/types";
 
 /**
  * Restates a savings or investment balance to whatever the provider actually
@@ -33,7 +33,7 @@ export function AdjustBalanceDialog({
   onClose,
 }: {
   uid: string;
-  account: AccountKind;
+  account: Account;
   /** What the account closed the viewed month at. */
   currentCents: number;
   monthStart: Date;
@@ -61,7 +61,7 @@ export function AdjustBalanceDialog({
     setError(null);
     setPending(true);
     try {
-      await adjustAccountBalance(uid, account, {
+      await adjustAccountBalance(uid, account.id, {
         differenceCents: parsed - currentCents,
         note: note.trim(),
         date: fromDateInputValue(date),
@@ -81,7 +81,7 @@ export function AdjustBalanceDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title={`Update ${ACCOUNT_LABELS[account]}`}
+      title={`Update ${account.name}`}
       description={`${formatMonthLabel(monthStart)} closed at ${formatMoney(
         currentCents,
       )}. Enter what it was actually worth and the difference is filed as growth or a loss.`}

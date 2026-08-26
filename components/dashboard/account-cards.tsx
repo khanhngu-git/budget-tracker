@@ -1,42 +1,33 @@
 "use client";
 
-import { Icon, type IconName } from "@/components/ui/icon";
+import { Icon } from "@/components/ui/icon";
 import { accountActivity } from "@/lib/budget/analytics";
 import { formatMoney } from "@/lib/budget/format";
 import {
-  ACCOUNT_BLURBS,
-  ACCOUNT_KINDS,
-  ACCOUNT_LABELS,
+  ACCOUNT_TYPE_BLURBS,
+  ACCOUNT_TYPE_ICONS,
+  isEveryday,
+  seriesColor,
   type Account,
-  type AccountKind,
   type Transaction,
 } from "@/lib/budget/types";
-
-const SERIES_COLOR: Record<AccountKind, string> = {
-  spending: "var(--series-spending)",
-  savings: "var(--series-savings)",
-  investments: "var(--series-investments)",
-};
-
-const ACCOUNT_ICON: Record<AccountKind, IconName> = {
-  spending: "wallet",
-  savings: "vault",
-  investments: "trendUp",
-};
 
 /**
  * One line of plain English about what happened to this account in the month
  * being viewed. The balance above it is the number; this is what it means.
  */
-function activityLine(kind: AccountKind, transactions: Transaction[]): string {
+function activityLine(account: Account, transactions: Transaction[]): string {
   const { contributionCents, growthCents, incomeCents, expenseCents } =
-    accountActivity(transactions, kind);
+    accountActivity(transactions, account);
 
   const parts: string[] = [];
 
-  if (kind === "spending") {
+  if (isEveryday(account.type)) {
     if (incomeCents > 0) parts.push(`${formatMoney(incomeCents)} in`);
     if (expenseCents > 0) parts.push(`${formatMoney(expenseCents)} out`);
+    if (contributionCents > 0) {
+      parts.push(`${formatMoney(contributionCents)} moved in`);
+    }
     if (contributionCents < 0) {
       parts.push(`${formatMoney(-contributionCents)} moved away`);
     }
@@ -59,22 +50,38 @@ export function AccountCards({
   transactions,
   onAdjust,
 }: {
-  /** Closing balances for the month on screen. */
-  accounts: Record<AccountKind, Account>;
-  /** What rolled in from the month before. */
-  openingAccounts: Record<AccountKind, Account>;
+  /** Closing balances for the month on screen, in display order. */
+  accounts: Account[];
+  /** The same accounts, holding what rolled in from the month before. */
+  openingAccounts: Account[];
   transactions: Transaction[];
-  onAdjust: (account: AccountKind) => void;
+  onAdjust: (account: Account) => void;
 }) {
+  const opening = new Map(
+    openingAccounts.map((account) => [account.id, account.balanceCents]),
+  );
+
+  if (accounts.length === 0) {
+    return (
+      <p className="rounded-2xl border border-dashed border-border bg-surface px-5 py-6 text-sm text-muted">
+        No accounts yet. Add one and your balances start here.
+      </p>
+    );
+  }
+
   return (
-    <div className="grid gap-4 sm:grid-cols-3">
-      {ACCOUNT_KINDS.map((kind) => {
-        const balance = accounts[kind].balanceCents;
-        const opening = openingAccounts[kind].balanceCents;
-        const change = balance - opening;
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {accounts.map((account, index) => {
+        const balance = account.balanceCents;
+        const opened = opening.get(account.id) ?? 0;
+        const change = balance - opened;
+        // Colour follows the account's position in the list, so adding a new
+        // one never repaints the ones the reader already knows.
+        const color = seriesColor(index);
+
         return (
           <article
-            key={kind}
+            key={account.id}
             className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-5"
           >
             <div className="flex items-center gap-2.5">
@@ -82,18 +89,21 @@ export function AccountCards({
                 aria-hidden
                 className="flex h-8 w-8 items-center justify-center rounded-lg"
                 style={{
-                  color: SERIES_COLOR[kind],
-                  backgroundColor: `color-mix(in oklab, ${SERIES_COLOR[kind]} 14%, var(--surface))`,
+                  color,
+                  backgroundColor: `color-mix(in oklab, ${color} 14%, var(--surface))`,
                 }}
               >
-                <Icon name={ACCOUNT_ICON[kind]} className="h-4.5 w-4.5" />
+                <Icon
+                  name={ACCOUNT_TYPE_ICONS[account.type]}
+                  className="h-4.5 w-4.5"
+                />
               </span>
               <div className="min-w-0 flex-1">
                 <h3 className="truncate text-sm font-medium text-foreground">
-                  {ACCOUNT_LABELS[kind]}
+                  {account.name}
                 </h3>
                 <p className="truncate text-xs text-muted">
-                  {ACCOUNT_BLURBS[kind]}
+                  {ACCOUNT_TYPE_BLURBS[account.type]}
                 </p>
               </div>
             </div>
@@ -110,20 +120,20 @@ export function AccountCards({
               {/* The rollover, stated: this month starts where last month
                   finished, and nothing before it can move again. */}
               <p className="truncate text-xs text-muted">
-                Rolled over {formatMoney(opening)}
+                Rolled over {formatMoney(opened)}
                 {change === 0
                   ? " · unchanged"
                   : `, ${change > 0 ? "up" : "down"} ${formatMoney(Math.abs(change))}`}
               </p>
               <p className="truncate text-xs text-muted">
-                {activityLine(kind, transactions)}
+                {activityLine(account, transactions)}
               </p>
             </div>
 
             <div className="flex justify-end">
               <button
                 type="button"
-                onClick={() => onAdjust(kind)}
+                onClick={() => onAdjust(account)}
                 className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-muted hover:text-foreground"
               >
                 <Icon name="pencil" className="h-3.5 w-3.5" />
