@@ -4,11 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { Logo } from "@/components/brand/logo";
-import { Avatar } from "@/components/settings/avatar";
-import { Button } from "@/components/ui/button";
+import { UserMenu } from "@/components/nav/user-menu";
 import { MonthSwitcher } from "@/components/dashboard/month-switcher";
 import { OnboardingDialog } from "@/components/dashboard/onboarding-dialog";
-import { useAuth } from "@/lib/auth/auth-context";
 import { useBudgetContext } from "@/lib/budget/budget-context";
 import { formatMonthLabel } from "@/lib/budget/format";
 import { useSettings } from "@/lib/settings/settings-context";
@@ -31,8 +29,7 @@ const TABS = [
  * every click.
  */
 export function DashboardShell({ children }: { children: ReactNode }) {
-  const { user, logOut } = useAuth();
-  const { preferences, formatKey } = useSettings();
+  const { formatKey } = useSettings();
   const {
     uid,
     liveAccounts,
@@ -61,64 +58,61 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex flex-1 flex-col bg-surface-muted">
       <header className="border-b border-border bg-surface">
-        <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between px-6">
-          <Logo href="/dashboard" />
-          <div className="flex items-center gap-3">
-            {/* Links to Settings rather than opening a menu: the avatar is the
-                only thing on this page that is *about* the user, so the one
-                page that is too. */}
-            <Link
-              href="/dashboard/settings"
-              className="flex min-w-0 items-center gap-2 rounded-full py-1 pl-1 pr-2 transition-colors hover:bg-surface-muted"
-            >
-              <Avatar
-                preferences={preferences}
-                fallback={user?.email ?? ""}
-                size="sm"
-              />
-              <span className="hidden max-w-[14rem] truncate text-sm text-muted sm:inline">
-                {preferences.displayName.trim() || user?.email}
-              </span>
-            </Link>
-            <Button variant="outline" size="sm" onClick={logOut}>
-              Log out
-            </Button>
-          </div>
+        <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between gap-2 px-4 sm:px-6">
+          {/* Home, not Overview: this is the one escape hatch back out to
+              the public site, and a signed-in user who wants it has no other
+              way to reach it. The tab bar below already covers Overview. */}
+          <Logo href="/" />
+          <UserMenu />
         </div>
 
-        <nav
-          aria-label="Dashboard sections"
-          className="mx-auto w-full max-w-5xl px-6"
-        >
-          <ul className="-mb-px flex gap-1">
-            {TABS.map((tab) => {
-              // "/dashboard" would otherwise match every child route.
-              const current =
-                tab.href === "/dashboard"
-                  ? pathname === "/dashboard"
-                  : pathname.startsWith(tab.href);
+        {/* Five tabs don't fit a phone at any padding that leaves them
+            tappable, and a wrapping row pushes the content down by a whole
+            line. So the strip scrolls, with fades at the gutters standing in
+            for the hidden scrollbar. */}
+        <div className="relative mx-auto w-full max-w-5xl">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 left-0 z-10 w-4 bg-gradient-to-r from-surface to-transparent sm:hidden"
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-gradient-to-l from-surface to-transparent sm:hidden"
+          />
+          <nav
+            aria-label="Dashboard sections"
+            className="no-scrollbar -mb-px overflow-x-auto px-4 sm:px-6"
+          >
+            <ul className="flex w-max gap-1">
+              {TABS.map((tab) => {
+                // "/dashboard" would otherwise match every child route.
+                const current =
+                  tab.href === "/dashboard"
+                    ? pathname === "/dashboard"
+                    : pathname.startsWith(tab.href);
 
-              return (
-                <li key={tab.href}>
-                  <Link
-                    href={tab.href}
-                    aria-current={current ? "page" : undefined}
-                    className={`inline-flex h-10 items-center border-b-2 px-3 text-sm font-medium transition-colors ${
-                      current
-                        ? "border-foreground text-foreground"
-                        : "border-transparent text-muted hover:text-foreground"
-                    }`}
-                  >
-                    {tab.label}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
+                return (
+                  <li key={tab.href} className="shrink-0">
+                    <Link
+                      href={tab.href}
+                      aria-current={current ? "page" : undefined}
+                      className={`inline-flex h-11 items-center whitespace-nowrap border-b-2 px-2.5 text-sm font-medium transition-colors sm:h-10 sm:px-3 ${
+                        current
+                          ? "border-foreground text-foreground"
+                          : "border-transparent text-muted hover:text-foreground"
+                      }`}
+                    >
+                      {tab.label}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+        </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-8">
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             {formatMonthLabel(monthStart)}

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth/auth-context";
+import { SettingsProvider } from "@/lib/settings/settings-context";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,7 +26,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <AuthProvider>{children}</AuthProvider>
+        {/* Settings sit at the root, not over /dashboard, because the public
+            header shows the same person as the dashboard's — same avatar,
+            same name. It subscribes to nothing until someone is signed in,
+            so the landing page still costs a signed-out visitor no reads. */}
+        <AuthProvider>
+          <SettingsProvider>{children}</SettingsProvider>
+        </AuthProvider>
       </body>
     </html>
   );
