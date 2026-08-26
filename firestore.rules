@@ -27,7 +27,8 @@ service cloud.firestore {
                               && request.resource.data.balanceCents is int
                               && (!('type' in request.resource.data)
                                   || request.resource.data.type in
-                                     ['spending', 'cash', 'savings', 'investments'])
+                                     ['spending', 'cash', 'savings',
+                                      'investments', 'debt'])
                               && (!('name' in request.resource.data)
                                   || (request.resource.data.name is string
                                       && request.resource.data.name.size() > 0

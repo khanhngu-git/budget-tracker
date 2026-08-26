@@ -1,7 +1,12 @@
 "use client";
 
 import { Icon } from "@/components/ui/icon";
-import type { GoalProgress, GoalStatus } from "@/lib/budget/analytics";
+import {
+  SCOPE_COLORS,
+  type GoalProgress,
+  type GoalStatus,
+  type SpendScope,
+} from "@/lib/budget/analytics";
 import { formatMoney, formatPercent } from "@/lib/budget/format";
 
 export const STATUS_COLOR: Record<GoalStatus, string> = {
@@ -51,9 +56,25 @@ export function GoalCard({
   pending: boolean;
 }) {
   const color = STATUS_COLOR[entry.status];
+  // The stripe is the card's link back to the allocation bar: same colour,
+  // same meaning. Status keeps the icon and the meter, because "am I on
+  // track" and "which part of the plan is this" are different questions and
+  // must not be answered in the same channel. Income has no stripe — it is
+  // what the others are allocated out of, not one of them.
+  const stripe =
+    entry.goal.scope === "income"
+      ? null
+      : SCOPE_COLORS[entry.goal.scope as SpendScope];
 
   return (
-    <li className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-5">
+    <li className="relative flex flex-col gap-3 overflow-hidden rounded-2xl border border-border bg-surface p-5">
+      {stripe ? (
+        <span
+          aria-hidden
+          className="absolute inset-y-0 left-0 w-1"
+          style={{ backgroundColor: stripe }}
+        />
+      ) : null}
       <div className="flex items-center gap-2.5">
         <span
           aria-hidden

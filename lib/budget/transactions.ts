@@ -22,7 +22,7 @@ import {
 } from "./ledger";
 import { normaliseName } from "./accounts";
 import { accountDoc, accountsPath, transactionsPath } from "./paths";
-import type { AccountType, Transaction, TransactionKind } from "./types";
+import { isDebt, type AccountType, type Transaction, type TransactionKind } from "./types";
 
 export { transactionsPath };
 export { BudgetError };
@@ -131,7 +131,11 @@ async function settleBalances(
   // error, not a record of something that happened.
   if (next?.kind === "transfer") {
     const source = resulting.get(next.accountId);
-    if (source !== undefined && source < 0) {
+    // A debt account is *meant* to sit below zero, so "would go negative" says
+    // nothing about it — drawing on a credit card is exactly what it's for.
+    const sourceIsDebt =
+      snapshots[touched.indexOf(next.accountId)]?.data()?.type === "debt";
+    if (source !== undefined && source < 0 && !sourceIsDebt) {
       const index = touched.indexOf(next.accountId);
       const stored = snapshots[index]?.data()?.name;
       const name = typeof stored === "string" && stored ? stored : "That account";
@@ -317,8 +321,17 @@ export async function openAccountsWithBalances(
     if (normaliseName(entry.name) === "") {
       throw new BudgetError("Give every account a name.");
     }
-    if (!Number.isInteger(entry.balanceCents) || entry.balanceCents < 0) {
-      throw new BudgetError("Enter each balance as an amount, like 1250.00.");
+    // Debt accounts open below zero — that's what makes them debt. Everything
+    // else opening negative would be a typo, not a balance.
+    const floorBroken = isDebt(entry.type)
+      ? entry.balanceCents > 0
+      : entry.balanceCents < 0;
+    if (!Number.isInteger(entry.balanceCents) || floorBroken) {
+      throw new BudgetError(
+        isDebt(entry.type)
+          ? "Enter what you owe as an amount, like 2400.00."
+          : "Enter each balance as an amount, like 1250.00.",
+      );
     }
   }
 
@@ -336,9 +349,11 @@ export async function openAccountsWithBalances(
     if (entry.balanceCents === 0) return;
     batch.set(doc(transactionsPath(uid)), {
       ...documentFor({
-        kind: "gain",
+        // A debt opens below zero, and amounts are never signed — so the
+        // opening entry for one is a loss of what's owed, not a negative gain.
+        kind: entry.balanceCents > 0 ? "gain" : "loss",
         accountId: ref.id,
-        amountCents: entry.balanceCents,
+        amountCents: Math.abs(entry.balanceCents),
         note: input.note,
         date: input.date,
       }),

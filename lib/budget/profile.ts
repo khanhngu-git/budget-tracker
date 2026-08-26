@@ -34,6 +34,11 @@ export function subscribeProfile(
   );
 }
 
+/** Puts the prompt back, for a user who has just wiped their data. */
+export async function markOpeningBalancesUnset(uid: string): Promise<void> {
+  await setDoc(profileDoc(uid), { openingBalancesSet: false }, { merge: true });
+}
+
 export async function markOpeningBalancesSet(uid: string): Promise<void> {
   await setDoc(
     profileDoc(uid),
