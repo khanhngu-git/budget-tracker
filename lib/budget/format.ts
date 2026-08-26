@@ -62,6 +62,54 @@ export function formatMonthLabel(date: Date): string {
   }).format(date);
 }
 
+/** "Aug" — for axis ticks, where the year is carried by the axis itself. */
+export function formatMonthShort(date: Date): string {
+  return new Intl.DateTimeFormat(LOCALE, { month: "short" }).format(date);
+}
+
+/**
+ * A share as a whole percentage. Anything under 1% that isn't actually zero
+ * gets a decimal rather than rounding down to "0%", which would read as
+ * "nothing" for money that was really allocated.
+ */
+export function formatPercent(share: number): string {
+  const value = share * 100;
+  if (value > 0 && value < 1) return `${value.toFixed(1)}%`;
+  return `${Math.round(value)}%`;
+}
+
+/**
+ * The heading a day's entries sit under.
+ *
+ * Recent days are named rather than dated: "Today" and "Yesterday" are how
+ * people refer to the entries they're most likely to be correcting, and a date
+ * makes the reader do the conversion themselves.
+ */
+export function formatDayHeading(date: Date, now: Date = new Date()): string {
+  const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const daysApart = Math.round(
+    (today.getTime() - day.getTime()) / (24 * 60 * 60 * 1000),
+  );
+
+  if (daysApart === 0) return "Today";
+  if (daysApart === 1) return "Yesterday";
+
+  return new Intl.DateTimeFormat(LOCALE, {
+    weekday: "short",
+    day: "numeric",
+    month: "long",
+    // The month view already says which year, except when it doesn't.
+    year: day.getFullYear() === today.getFullYear() ? undefined : "numeric",
+  }).format(day);
+}
+
+/** Stable "2026-08-14" key for the day a date falls in. */
+export function dayKey(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 /** Local-time YYYY-MM-DD, for <input type="date"> round-tripping. */
 export function toDateInputValue(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -99,4 +147,77 @@ export function defaultDateFor(monthStart: Date, now: Date = new Date()): Date {
 /** Stable "2026-08" key for the month a date falls in. Used as a document id. */
 export function monthKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/* ── Month boundaries ───────────────────────────────────────────────── */
+
+export function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+/**
+ * Month arithmetic done on the calendar rather than on milliseconds, so a
+ * daylight-saving change can't land the result on the wrong day.
+ */
+export function addMonths(date: Date, delta: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + delta, 1);
+}
+
+export function endOfMonth(monthStart: Date): Date {
+  return addMonths(monthStart, 1);
+}
+
+export function isInMonth(date: Date, monthStart: Date): boolean {
+  return (
+    date.getFullYear() === monthStart.getFullYear() &&
+    date.getMonth() === monthStart.getMonth()
+  );
+}
+
+/* ── Day, week and year boundaries ──────────────────────────────────── */
+
+export function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+/**
+ * Day arithmetic done on the calendar for the same reason month arithmetic is:
+ * adding 24 hours' worth of milliseconds lands on the wrong day either side of
+ * a daylight-saving change.
+ */
+export function addDays(date: Date, delta: number): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + delta);
+}
+
+/** Monday — the week people mean when they say "this week" in a budget. */
+export function startOfWeek(date: Date): Date {
+  const day = startOfDay(date);
+  // getDay() is Sunday-first, so Sunday (0) is six days into its week.
+  const offset = (day.getDay() + 6) % 7;
+  return addDays(day, -offset);
+}
+
+export function startOfYear(date: Date): Date {
+  return new Date(date.getFullYear(), 0, 1);
+}
+
+export function addYears(date: Date, delta: number): Date {
+  return new Date(date.getFullYear() + delta, 0, 1);
+}
+
+/** "Aug 14" — for axis ticks, where the year is carried by the axis itself. */
+export function formatDayShort(date: Date): string {
+  return new Intl.DateTimeFormat(LOCALE, {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
+/** "14 August 2026" — the long form, for a readout line that has the room. */
+export function formatDayLong(date: Date): string {
+  return new Intl.DateTimeFormat(LOCALE, {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
 }

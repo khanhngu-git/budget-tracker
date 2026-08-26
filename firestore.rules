@@ -14,10 +14,24 @@ service cloud.firestore {
 
       allow read, write: if isOwner();
 
+      // Accounts are user-created and user-named, so the document id carries no
+      // meaning any more — the fields do. A delete carries no request.resource,
+      // and the app already refuses to remove an account that holds money or
+      // has history, so ownership is the whole rule there.
       match /accounts/{accountId} {
-        allow read: if isOwner();
-        allow write: if isOwner()
-                     && request.resource.data.balanceCents is int;
+        allow read, delete: if isOwner();
+        // Name and type are checked only when present: a balance settling
+        // against an account written by an older build must not be rejected
+        // for lacking fields that build never wrote.
+        allow create, update: if isOwner()
+                              && request.resource.data.balanceCents is int
+                              && (!('type' in request.resource.data)
+                                  || request.resource.data.type in
+                                     ['spending', 'cash', 'savings', 'investments'])
+                              && (!('name' in request.resource.data)
+                                  || (request.resource.data.name is string
+                                      && request.resource.data.name.size() > 0
+                                      && request.resource.data.name.size() <= 32));
       }
 
       // Goals: what the user means to earn, put away, invest, or stay under in
@@ -50,6 +64,7 @@ service cloud.firestore {
         allow create, update: if isOwner()
                               && request.resource.data.amountCents is int
                               && request.resource.data.amountCents > 0
+                              && request.resource.data.accountId is string
                               && request.resource.data.kind in
                                  ['income', 'expense', 'transfer', 'gain', 'loss'];
         allow delete: if isOwner();

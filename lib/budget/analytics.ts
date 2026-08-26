@@ -1,12 +1,28 @@
 import type { IconName } from "@/components/ui/icon";
 import { categoryIcon, categoryLabel } from "./categories";
 import type { GoalMap } from "./goals";
-import { formatMoney } from "./format";
 import {
-  ACCOUNT_LABELS,
+  addDays,
+  addMonths,
+  addYears,
+  endOfMonth,
+  formatDayLong,
+  formatDayShort,
+  formatMonthLabel,
+  formatMonthShort,
+  formatMoney,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  startOfYear,
+} from "./format";
+import { applyLedger, sumBalances, type Deltas } from "./ledger";
+import {
+  ACCOUNT_TYPE_LABELS,
   goalDirection,
   goalId,
-  type AccountKind,
+  type Account,
+  type AccountType,
   type Goal,
   type GoalDirection,
   type GoalScope,
@@ -40,50 +56,193 @@ export function summariseMonth(transactions: Transaction[]): MonthSummary {
   return { incomeCents, expenseCents, netCents: incomeCents - expenseCents };
 }
 
+/** The ids of every account of a given type — what a savings goal measures. */
+export function idsOfType(
+  accounts: Account[],
+  type: AccountType,
+): Set<string> {
+  return new Set(
+    accounts.filter((account) => account.type === type).map((a) => a.id),
+  );
+}
+
 /**
- * Money deliberately moved into an account this month, net of anything moved
- * back out. Interest and market movement are not contributions, so gains and
- * losses don't count toward a savings or investing goal — otherwise a good
- * month on the markets would look like the user hit a target they never
- * actually funded.
+ * Money deliberately moved into a group of accounts this month, net of
+ * anything moved back out.
+ *
+ * The group is what makes splitting your savings across three pots harmless: a
+ * transfer *between* two of them is invisible here, because nothing crossed
+ * the boundary. Interest and market movement aren't contributions either — a
+ * good month on the markets shouldn't look like a target the user funded.
  */
 export function contributionTo(
   transactions: Transaction[],
-  account: AccountKind,
+  accountIds: ReadonlySet<string>,
 ): number {
   return transactions.reduce((sum, transaction) => {
     if (transaction.kind !== "transfer") return sum;
-    if (transaction.toAccountId === account) return sum + transaction.amountCents;
-    if (transaction.accountId === account) return sum - transaction.amountCents;
+    const into = transaction.toAccountId !== null &&
+      accountIds.has(transaction.toAccountId);
+    const outOf = accountIds.has(transaction.accountId);
+    if (into && !outOf) return sum + transaction.amountCents;
+    if (outOf && !into) return sum - transaction.amountCents;
     return sum;
   }, 0);
 }
 
-/** Gains minus losses recorded against an account this month. */
+/** Gains minus losses recorded against a group of accounts this month. */
 export function growthFor(
   transactions: Transaction[],
-  account: AccountKind,
+  accountIds: ReadonlySet<string>,
 ): number {
   return transactions.reduce((sum, transaction) => {
-    if (transaction.accountId !== account) return sum;
+    if (!accountIds.has(transaction.accountId)) return sum;
     if (transaction.kind === "gain") return sum + transaction.amountCents;
     if (transaction.kind === "loss") return sum - transaction.amountCents;
     return sum;
   }, 0);
 }
 
-/** Every way an account moved this month, for the qualitative account lines. */
+/** Every way one account moved this month, for the qualitative account lines. */
 export function accountActivity(
   transactions: Transaction[],
-  account: AccountKind,
+  account: Account,
 ) {
-  const summary = summariseMonth(transactions);
+  const ids = new Set([account.id]);
+  let incomeCents = 0;
+  let expenseCents = 0;
+
+  for (const transaction of transactions) {
+    if (transaction.accountId !== account.id) continue;
+    if (transaction.kind === "income") incomeCents += transaction.amountCents;
+    if (transaction.kind === "expense") expenseCents += transaction.amountCents;
+  }
+
   return {
-    contributionCents: contributionTo(transactions, account),
-    growthCents: growthFor(transactions, account),
-    incomeCents: account === "spending" ? summary.incomeCents : 0,
-    expenseCents: account === "spending" ? summary.expenseCents : 0,
+    contributionCents: contributionTo(transactions, ids),
+    growthCents: growthFor(transactions, ids),
+    incomeCents,
+    expenseCents,
   };
+}
+
+/* ── Balances over time ─────────────────────────────────────────────── */
+
+/** The bucket the growth chart plots one point per. */
+export type HistoryPeriod = "daily" | "weekly" | "monthly" | "yearly";
+
+export type BalancePoint = {
+  /** Start of the bucket this point closes. */
+  start: Date;
+  /** Exclusive end — the instant these balances were true as of. */
+  end: Date;
+  /** "Aug 14", "Aug", "2026" — the axis carries whatever the label leaves out. */
+  label: string;
+  /** The same moment named in full, for the readout line that has the room. */
+  caption: string;
+  /** Closing balance per account id at the end of that bucket. */
+  balances: Deltas;
+  totalCents: number;
+};
+
+function startOfPeriod(date: Date, period: HistoryPeriod): Date {
+  switch (period) {
+    case "daily":
+      return startOfDay(date);
+    case "weekly":
+      return startOfWeek(date);
+    case "monthly":
+      return startOfMonth(date);
+    case "yearly":
+      return startOfYear(date);
+  }
+}
+
+function addPeriods(start: Date, period: HistoryPeriod, delta: number): Date {
+  switch (period) {
+    case "daily":
+      return addDays(start, delta);
+    case "weekly":
+      return addDays(start, delta * 7);
+    case "monthly":
+      return addMonths(start, delta);
+    case "yearly":
+      return addYears(start, delta);
+  }
+}
+
+function labelFor(start: Date, period: HistoryPeriod): string {
+  switch (period) {
+    case "daily":
+    case "weekly":
+      return formatDayShort(start);
+    case "monthly":
+      return formatMonthShort(start);
+    case "yearly":
+      return String(start.getFullYear());
+  }
+}
+
+function captionFor(start: Date, period: HistoryPeriod): string {
+  switch (period) {
+    case "daily":
+      return formatDayLong(start);
+    case "weekly":
+      return `Week of ${formatDayLong(start)}`;
+    case "monthly":
+      return formatMonthLabel(start);
+    case "yearly":
+      return String(start.getFullYear());
+  }
+}
+
+/**
+ * What each account was worth at the close of each of the last `count`
+ * days, weeks, months or years, ending with the month on screen.
+ *
+ * Derived by rewinding rather than replaying from the beginning of time: start
+ * from the balances we already know, then take each bucket's entries back off
+ * to get the bucket before it. That means the periods people actually look at
+ * — the recent ones — cost the fewest reads, and the chart can never disagree
+ * with the account cards above it, because both come from the same figure.
+ */
+export function balanceHistory(
+  closing: Readonly<Deltas>,
+  monthStart: Date,
+  ledger: Transaction[],
+  period: HistoryPeriod,
+  count: number,
+): BalancePoint[] {
+  // `closing` is what the accounts held when the viewed month ended, so that
+  // instant is the only place the rewind can honestly start from.
+  const anchorEnd = endOfMonth(monthStart);
+
+  const points: BalancePoint[] = [];
+  let balances: Deltas = { ...closing };
+  let end = anchorEnd;
+  // The newest bucket is the one the anchor falls in, cut short at the anchor:
+  // a month ending mid-week must not imply days that haven't happened yet.
+  let start = startOfPeriod(new Date(anchorEnd.getTime() - 1), period);
+
+  for (let step = 0; step < count; step += 1) {
+    points.push({
+      start,
+      end,
+      label: labelFor(start, period),
+      caption: captionFor(start, period),
+      balances,
+      totalCents: sumBalances(balances),
+    });
+
+    const inside = ledger.filter(
+      (entry) => entry.date >= start && entry.date < end,
+    );
+    balances = applyLedger(balances, inside, -1);
+    end = start;
+    start = addPeriods(start, period, -1);
+  }
+
+  return points.reverse();
 }
 
 /* ── Spending by category ───────────────────────────────────────────── */
@@ -169,6 +328,12 @@ export type GoalProgress = {
   targetCents: number;
   /** actual ÷ target, uncapped, so overspend stays visible. */
   share: number;
+  /**
+   * The target as a fraction of the month's income target — what this goal
+   * claims of the money coming in. null when no income target is set, since
+   * there's then nothing to be a share *of*.
+   */
+  shareOfIncome: number | null;
   status: GoalStatus;
   /** Plain-language state — the headline the UI leads with. */
   summary: string;
@@ -182,7 +347,7 @@ const SCOPE_ICON: Record<Exclude<GoalScope, "expense">, IconName> = {
 
 export function goalLabel(goal: Goal): string {
   if (goal.scope === "expense") return categoryLabel(goal.categoryId);
-  return goal.scope === "income" ? "Income" : ACCOUNT_LABELS[goal.scope];
+  return goal.scope === "income" ? "Income" : ACCOUNT_TYPE_LABELS[goal.scope];
 }
 
 export function goalIcon(goal: Goal): IconName {
@@ -191,13 +356,17 @@ export function goalIcon(goal: Goal): IconName {
     : SCOPE_ICON[goal.scope];
 }
 
-function actualFor(goal: Goal, transactions: Transaction[]): number {
+function actualFor(
+  goal: Goal,
+  transactions: Transaction[],
+  accounts: Account[],
+): number {
   switch (goal.scope) {
     case "income":
       return summariseMonth(transactions).incomeCents;
     case "savings":
     case "investments":
-      return contributionTo(transactions, goal.scope);
+      return contributionTo(transactions, idsOfType(accounts, goal.scope));
     case "expense":
       return goal.categoryId
         ? spendForCategory(transactions, goal.categoryId)
@@ -245,11 +414,13 @@ export function goalProgress(
   goal: Goal,
   transactions: Transaction[],
   elapsed: number,
+  accounts: Account[],
+  incomeTargetCents: number | null,
 ): GoalProgress {
   const direction = goalDirection(goal.scope);
   // A withdrawal can push a contribution negative; treated as zero progress
   // rather than a negative bar, which has nothing to mean.
-  const actualCents = Math.max(0, actualFor(goal, transactions));
+  const actualCents = Math.max(0, actualFor(goal, transactions, accounts));
   const share = goal.amountCents === 0 ? 0 : actualCents / goal.amountCents;
 
   return {
@@ -260,6 +431,12 @@ export function goalProgress(
     actualCents,
     targetCents: goal.amountCents,
     share,
+    // Income is the thing the others are shares of, so it isn't a share of
+    // itself — "100% of income" would be noise on every plan ever made.
+    shareOfIncome:
+      goal.scope === "income" || !incomeTargetCents || incomeTargetCents <= 0
+        ? null
+        : goal.amountCents / incomeTargetCents,
     ...gradeGoal(direction, share, elapsed),
   };
 }
@@ -271,9 +448,14 @@ export function allGoalProgress(
   goals: GoalMap,
   transactions: Transaction[],
   elapsed: number,
+  accounts: Account[],
 ): GoalProgress[] {
+  const { incomeTargetCents } = allocationOf(goals);
+
   return Object.values(goals)
-    .map((goal) => goalProgress(goal, transactions, elapsed))
+    .map((goal) =>
+      goalProgress(goal, transactions, elapsed, accounts, incomeTargetCents),
+    )
     .sort(
       (a, b) =>
         STATUS_RANK[a.status] - STATUS_RANK[b.status] || b.share - a.share,
@@ -398,7 +580,6 @@ export function spendingHeadline(rows: CategorySpend[]): string {
   }
   return `${rows[0].label} took ${shareInWords(rows[0].share)} of your spending, ahead of ${rows[1].label.toLowerCase()}.`;
 }
-
 
 /* ── Allocation: everything is budgeted out of income ───────────────── */
 

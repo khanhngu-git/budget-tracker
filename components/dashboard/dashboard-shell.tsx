@@ -6,7 +6,7 @@ import { useState, type ReactNode } from "react";
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { MonthSwitcher } from "@/components/dashboard/month-switcher";
-import { OpeningBalancesDialog } from "@/components/dashboard/opening-balances-dialog";
+import { OnboardingDialog } from "@/components/dashboard/onboarding-dialog";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useBudgetContext } from "@/lib/budget/budget-context";
 import { formatMonthLabel } from "@/lib/budget/format";
@@ -15,6 +15,7 @@ const TABS = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/transactions", label: "Transactions" },
   { href: "/dashboard/budget", label: "Budget" },
+  { href: "/dashboard/statistics", label: "Statistics" },
 ] as const;
 
 /**
@@ -28,8 +29,15 @@ const TABS = [
  */
 export function DashboardShell({ children }: { children: ReactNode }) {
   const { user, logOut } = useAuth();
-  const { uid, monthStart, setMonthStart, needsOpeningBalances, error } =
-    useBudgetContext();
+  const {
+    uid,
+    liveAccounts,
+    monthStart,
+    setMonthStart,
+    needsOpeningBalances,
+    loading,
+    error,
+  } = useBudgetContext();
   // Dismissing leaves the flag unset, so the prompt returns next session
   // rather than being lost to a stray Escape.
   const [dismissed, setDismissed] = useState(false);
@@ -106,9 +114,12 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         {children}
       </main>
 
-      {uid && needsOpeningBalances && !dismissed ? (
-        <OpeningBalancesDialog
+      {/* Held until the accounts have arrived: the dialog decides which step to
+          open on from whether any exist, and it only gets to decide once. */}
+      {uid && needsOpeningBalances && !loading && !dismissed ? (
+        <OnboardingDialog
           uid={uid}
+          existing={liveAccounts}
           open
           onClose={() => setDismissed(true)}
         />

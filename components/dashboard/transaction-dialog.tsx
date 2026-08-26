@@ -13,19 +13,13 @@ import {
   parseAmountToCents,
   toDateInputValue,
 } from "@/lib/budget/format";
+import type { EntryInput } from "@/lib/budget/ledger";
 import {
   BudgetError,
   addTransaction,
   updateTransaction,
-  type EntryInput,
 } from "@/lib/budget/transactions";
-import {
-  ACCOUNT_KINDS,
-  ACCOUNT_LABELS,
-  type Account,
-  type AccountKind,
-  type Transaction,
-} from "@/lib/budget/types";
+import { isEveryday, type Account, type Transaction } from "@/lib/budget/types";
 
 type FormKind = "expense" | "income" | "transfer" | "gain" | "loss";
 
@@ -59,7 +53,7 @@ export function TransactionDialog({
 }: {
   uid: string;
   /** Running balances — what a new entry actually settles against. */
-  accounts: Record<AccountKind, Account>;
+  accounts: Account[];
   /** null when adding. */
   transaction: Transaction | null;
   /** The month on screen; entries are dated inside it. */
@@ -74,6 +68,14 @@ export function TransactionDialog({
   const isAdjustment =
     transaction?.kind === "gain" || transaction?.kind === "loss";
 
+  // Everyday income and expenses come out of everyday accounts. If the user
+  // has kept none, every account is offered rather than blocking the entry —
+  // recording what happened matters more than the tidiness of the model.
+  const everyday = accounts.filter((account) => isEveryday(account.type));
+  const spendable = everyday.length > 0 ? everyday : accounts;
+  const balanceOf = (id: string) =>
+    accounts.find((account) => account.id === id)?.balanceCents ?? 0;
+
   const [kind, setKind] = useState<FormKind>(
     (transaction?.kind as FormKind) ?? "expense",
   );
@@ -85,11 +87,20 @@ export function TransactionDialog({
       transaction?.categoryId ??
       categoriesFor(transaction?.kind === "income" ? "income" : "expense")[0].id,
   );
-  const [from, setFrom] = useState<AccountKind>(
-    transaction?.kind === "transfer" ? transaction.accountId : "spending",
+  const [account, setAccount] = useState(
+    () => transaction?.accountId ?? spendable[0]?.id ?? "",
   );
-  const [to, setTo] = useState<AccountKind>(
-    transaction?.toAccountId ?? "savings",
+  const [from, setFrom] = useState(
+    () =>
+      (transaction?.kind === "transfer" ? transaction.accountId : null) ??
+      spendable[0]?.id ??
+      "",
+  );
+  const [to, setTo] = useState(
+    () =>
+      transaction?.toAccountId ??
+      accounts.find((option) => option.id !== spendable[0]?.id)?.id ??
+      "",
   );
   const [note, setNote] = useState(transaction?.note ?? "");
   const [date, setDate] = useState(() =>
@@ -113,17 +124,17 @@ export function TransactionDialog({
   }
 
   /** Keeps the two transfer selects from landing on the same account. */
-  function changeFrom(next: AccountKind) {
+  function changeFrom(next: string) {
     setFrom(next);
     if (next === to) {
-      setTo(ACCOUNT_KINDS.find((option) => option !== next) ?? "savings");
+      setTo(accounts.find((option) => option.id !== next)?.id ?? "");
     }
   }
 
-  function changeTo(next: AccountKind) {
+  function changeTo(next: string) {
     setTo(next);
     if (next === from) {
-      setFrom(ACCOUNT_KINDS.find((option) => option !== next) ?? "spending");
+      setFrom(accounts.find((option) => option.id !== next)?.id ?? "");
     }
   }
 
@@ -134,13 +145,9 @@ export function TransactionDialog({
       return { kind, accountId: from, toAccountId: to, ...shared };
     }
     if (kind === "gain" || kind === "loss") {
-      return {
-        kind,
-        accountId: (transaction?.accountId ?? "savings") as AccountKind,
-        ...shared,
-      };
+      return { kind, accountId: transaction?.accountId ?? account, ...shared };
     }
-    return { kind, categoryId, ...shared };
+    return { kind, accountId: account, categoryId, ...shared };
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -172,6 +179,9 @@ export function TransactionDialog({
   }
 
   const tabs = isAdjustment ? ADJUSTMENT_TABS : TABS;
+  const adjusted = accounts.find(
+    (option) => option.id === transaction?.accountId,
+  );
 
   return (
     <Dialog
@@ -179,9 +189,9 @@ export function TransactionDialog({
       onClose={onClose}
       title={editing ? "Edit entry" : "Add entry"}
       description={
-        isAdjustment && transaction
-          ? `A change in ${ACCOUNT_LABELS[transaction.accountId]} that nobody moved.`
-          : "Income and expenses are recorded against your Spending account."
+        isAdjustment
+          ? `A change in ${adjusted?.name ?? "this account"} that nobody moved.`
+          : "Pick the account the money actually came out of, or went into."
       }
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -226,20 +236,45 @@ export function TransactionDialog({
         </Field>
 
         {kind === "income" || kind === "expense" ? (
-          <Field label="Category" htmlFor="category">
-            <Select
-              id="category"
-              value={categoryId}
-              onChange={(event) => setCategoryId(event.target.value)}
-              disabled={pending}
-            >
-              {options.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <>
+            <Field label="Category" htmlFor="category">
+              <Select
+                id="category"
+                value={categoryId}
+                onChange={(event) => setCategoryId(event.target.value)}
+                disabled={pending}
+              >
+                {options.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+
+            {/* Offered only when there's a genuine choice to make — a single
+                account is an answer, not a question. */}
+            {spendable.length > 1 ? (
+              <Field
+                label={kind === "income" ? "Paid into" : "Paid from"}
+                htmlFor="account"
+                hint={`Balance: ${formatMoney(balanceOf(account))}`}
+              >
+                <Select
+                  id="account"
+                  value={account}
+                  onChange={(event) => setAccount(event.target.value)}
+                  disabled={pending}
+                >
+                  {spendable.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            ) : null}
+          </>
         ) : null}
 
         {kind === "transfer" ? (
@@ -247,19 +282,17 @@ export function TransactionDialog({
             <Field
               label="From"
               htmlFor="from"
-              hint={`Available: ${formatMoney(accounts[from].balanceCents)}`}
+              hint={`Available: ${formatMoney(balanceOf(from))}`}
             >
               <Select
                 id="from"
                 value={from}
-                onChange={(event) =>
-                  changeFrom(event.target.value as AccountKind)
-                }
+                onChange={(event) => changeFrom(event.target.value)}
                 disabled={pending}
               >
-                {ACCOUNT_KINDS.map((option) => (
-                  <option key={option} value={option}>
-                    {ACCOUNT_LABELS[option]}
+                {accounts.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
                   </option>
                 ))}
               </Select>
@@ -269,12 +302,12 @@ export function TransactionDialog({
               <Select
                 id="to"
                 value={to}
-                onChange={(event) => changeTo(event.target.value as AccountKind)}
+                onChange={(event) => changeTo(event.target.value)}
                 disabled={pending}
               >
-                {ACCOUNT_KINDS.map((option) => (
-                  <option key={option} value={option}>
-                    {ACCOUNT_LABELS[option]}
+                {accounts.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
                   </option>
                 ))}
               </Select>

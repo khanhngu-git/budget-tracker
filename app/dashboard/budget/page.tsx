@@ -14,7 +14,12 @@ import {
 } from "@/lib/budget/analytics";
 import { useBudgetContext } from "@/lib/budget/budget-context";
 import { copyGoals, removeGoal } from "@/lib/budget/goals";
-import { formatMonthLabel, formatMoney, monthKey } from "@/lib/budget/format";
+import {
+  formatMonthLabel,
+  formatMoney,
+  formatPercent,
+  monthKey,
+} from "@/lib/budget/format";
 import { addMonths } from "@/lib/budget/use-budget";
 import type { Goal, GoalScope } from "@/lib/budget/types";
 
@@ -37,8 +42,15 @@ const GROUPS: { title: string; blurb: string; scopes: GoalScope[] }[] = [
 ];
 
 export default function BudgetPage() {
-  const { uid, goals, transactions, loading, goalsLoading, monthStart } =
-    useBudgetContext();
+  const {
+    uid,
+    accounts,
+    goals,
+    transactions,
+    loading,
+    goalsLoading,
+    monthStart,
+  } = useBudgetContext();
   const [editing, setEditing] = useState<{ goal: Goal | null } | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -54,6 +66,7 @@ export default function BudgetPage() {
     goals,
     transactions,
     monthElapsed(monthStart),
+    accounts,
   );
   const rollup = rollUpGoals(progress);
   const busy = loading || goalsLoading;
@@ -131,6 +144,14 @@ export default function BudgetPage() {
                   {formatMoney(allocatedCents)}
                 </span>{" "}
                 of {formatMoney(incomeTargetCents)}
+                {incomeTargetCents > 0 ? (
+                  <>
+                    {" · "}
+                    <span className="font-medium text-foreground">
+                      {formatPercent(allocatedCents / incomeTargetCents)}
+                    </span>
+                  </>
+                ) : null}
               </p>
             )}
           </div>
@@ -190,7 +211,9 @@ export default function BudgetPage() {
               </div>
               <p className="text-sm text-muted">
                 {unallocatedCents > 0
-                  ? `${formatMoney(unallocatedCents)} of this month's income target is still unallocated.`
+                  ? `${formatMoney(unallocatedCents)} — ${formatPercent(
+                      unallocatedCents / incomeTargetCents,
+                    )} — of this month's income target is still unallocated.`
                   : unallocatedCents < 0
                     ? `You've promised ${formatMoney(-unallocatedCents)} more than this month's income target. Lower a goal or raise the target.`
                     : "Every cent of this month's income target is allocated."}

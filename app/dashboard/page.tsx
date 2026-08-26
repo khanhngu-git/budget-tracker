@@ -1,47 +1,68 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AccountCards } from "@/components/dashboard/account-cards";
-import { AdjustBalanceDialog } from "@/components/dashboard/adjust-balance-dialog";
 import { AllocationChart } from "@/components/dashboard/allocation-chart";
+import { AccountsDialog } from "@/components/dashboard/accounts-dialog";
+import { AdjustBalanceDialog } from "@/components/dashboard/adjust-balance-dialog";
 import { BudgetPulse } from "@/components/dashboard/budget-pulse";
-import { ExpenseChart } from "@/components/dashboard/expense-chart";
-import { MonthVerdict } from "@/components/dashboard/month-verdict";
 import { Section } from "@/components/dashboard/section";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { allGoalProgress, monthElapsed, rollUpGoals } from "@/lib/budget/analytics";
 import { useBudgetContext } from "@/lib/budget/budget-context";
 import { formatMonthLabel, formatMoney } from "@/lib/budget/format";
-import type { AccountKind } from "@/lib/budget/types";
+import type { Account } from "@/lib/budget/types";
 
+/**
+ * Two questions, in order: how much have I got, and am I on track?
+ *
+ * The split sits with the balances because it's the same answer said a second
+ * way — how much, and how much of it is where. Everything that explains *why*
+ * the answer moved — the trend, the category breakdown — lives on Statistics.
+ * A dashboard that shows all of it at once makes the reader hunt for the
+ * balance they opened the app to check.
+ */
 export default function OverviewPage() {
   const {
     uid,
     accounts,
     openingAccounts,
+    liveAccounts,
     transactions,
     goals,
     totalCents,
     openingTotalCents,
-    loading,
     goalsLoading,
     monthStart,
   } = useBudgetContext();
-  const [adjusting, setAdjusting] = useState<AccountKind | null>(null);
+  const [adjusting, setAdjusting] = useState<Account | null>(null);
+  const [managing, setManaging] = useState(false);
 
   const monthLabel = formatMonthLabel(monthStart);
   const rollup = rollUpGoals(
-    allGoalProgress(goals, transactions, monthElapsed(monthStart)),
+    allGoalProgress(goals, transactions, monthElapsed(monthStart), accounts),
   );
 
   return (
     <>
-      {/* Accounts come first: "how much have I got?" is the question people
-          open the app with, and everything below is commentary on it. */}
       <Section
         title="Your accounts"
         subtitle={`${formatMoney(totalCents)} at the end of ${monthLabel}, carried in from ${formatMoney(
           openingTotalCents,
         )}.`}
+        action={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setManaging(true)}
+            disabled={!uid}
+          >
+            <Icon name="plus" className="h-4 w-4" />
+            Add or rename
+          </Button>
+        }
       >
         <AccountCards
           accounts={accounts}
@@ -49,28 +70,51 @@ export default function OverviewPage() {
           transactions={transactions}
           onAdjust={setAdjusting}
         />
+
+        {/* Directly under the cards, because it answers the question the cards
+            raise: a column of balances says how much, not how it's split. */}
         <AllocationChart accounts={accounts} />
       </Section>
 
       <Section
         divided
-        title={`How ${monthLabel} is going`}
-        subtitle="The month you're viewing, in words first."
+        title={`Are you on track for ${monthLabel}?`}
+        subtitle="Your plan, in one line."
       >
-        <MonthVerdict transactions={transactions} monthLabel={monthLabel} />
         <BudgetPulse rollup={rollup} loading={goalsLoading} />
-        <ExpenseChart transactions={transactions} loading={loading} />
+
+        <p className="text-sm text-muted">
+          Want the detail?{" "}
+          <Link
+            href="/dashboard/statistics"
+            className="font-medium text-foreground underline underline-offset-4"
+          >
+            See your statistics
+          </Link>{" "}
+          for the trend and where the money went.
+        </p>
       </Section>
 
       {uid && adjusting ? (
         <AdjustBalanceDialog
-          key={adjusting}
+          key={adjusting.id}
           uid={uid}
           account={adjusting}
-          currentCents={accounts[adjusting].balanceCents}
+          currentCents={adjusting.balanceCents}
           monthStart={monthStart}
           open
           onClose={() => setAdjusting(null)}
+        />
+      ) : null}
+
+      {uid && managing ? (
+        <AccountsDialog
+          uid={uid}
+          // Judged against the running total, not the month on screen: an
+          // account you emptied last week is empty now, whatever July says.
+          accounts={liveAccounts}
+          open
+          onClose={() => setManaging(false)}
         />
       ) : null}
     </>

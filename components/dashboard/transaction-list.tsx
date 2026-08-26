@@ -3,9 +3,18 @@
 import { useState } from "react";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { categoryIcon, categoryLabel } from "@/lib/budget/categories";
-import { formatDay, formatMoney } from "@/lib/budget/format";
+import {
+  dayKey,
+  formatDay,
+  formatDayHeading,
+  formatMoney,
+  formatSignedMoney,
+} from "@/lib/budget/format";
 import { BudgetError, deleteTransaction } from "@/lib/budget/transactions";
-import { ACCOUNT_LABELS, type Transaction } from "@/lib/budget/types";
+import { isEveryday, type Account, type Transaction } from "@/lib/budget/types";
+
+/** Accounts by id, so a row can name the account it moved. */
+type AccountLookup = Record<string, Account>;
 
 function amountDisplay(transaction: Transaction) {
   switch (transaction.kind) {
@@ -30,25 +39,92 @@ function amountDisplay(transaction: Transaction) {
   }
 }
 
-function describe(transaction: Transaction): string {
+/** An account that has since been renamed still has to render as something. */
+function nameOf(accounts: AccountLookup, id: string | null): string {
+  if (!id) return "—";
+  return accounts[id]?.name ?? "Closed account";
+}
+
+function describe(transaction: Transaction, accounts: AccountLookup): string {
   switch (transaction.kind) {
     case "transfer":
-      return `${ACCOUNT_LABELS[transaction.accountId]} → ${
-        transaction.toAccountId ? ACCOUNT_LABELS[transaction.toAccountId] : "—"
-      }`;
-    // Savings and investments genuinely grow on their own; a change to
-    // Spending is someone correcting the number, so it says so.
+      return `${nameOf(accounts, transaction.accountId)} → ${nameOf(
+        accounts,
+        transaction.toAccountId,
+      )}`;
+    // Savings and investments genuinely grow on their own; a change to an
+    // everyday account is someone correcting the number, so it says so.
     case "gain":
-      return transaction.accountId === "spending"
-        ? "Spending adjusted"
-        : `${ACCOUNT_LABELS[transaction.accountId]} growth`;
-    case "loss":
-      return transaction.accountId === "spending"
-        ? "Spending adjusted"
-        : `${ACCOUNT_LABELS[transaction.accountId]} loss`;
+    case "loss": {
+      const account = accounts[transaction.accountId];
+      const name = nameOf(accounts, transaction.accountId);
+      if (account && isEveryday(account.type)) return `${name} adjusted`;
+      return `${name} ${transaction.kind === "gain" ? "growth" : "loss"}`;
+    }
     default:
       return categoryLabel(transaction.categoryId);
   }
+}
+
+/**
+ * The quiet second line: which account, and the note. The date lives in the
+ * day heading above the group now, so repeating it on every row would just be
+ * the same string forty times down the page.
+ */
+function detailLine(transaction: Transaction, accounts: AccountLookup): string {
+  const parts: string[] = [];
+
+  if (transaction.kind === "income" || transaction.kind === "expense") {
+    parts.push(nameOf(accounts, transaction.accountId));
+  }
+  if (transaction.note) parts.push(transaction.note);
+
+  return parts.join(" · ");
+}
+
+/**
+ * What a single day did to the books: income and gains less expenses and
+ * losses. Transfers are left out — moving money between your own accounts
+ * doesn't make the day better or worse.
+ */
+function netFor(transactions: Transaction[]): number {
+  return transactions.reduce((sum, transaction) => {
+    switch (transaction.kind) {
+      case "income":
+      case "gain":
+        return sum + transaction.amountCents;
+      case "expense":
+      case "loss":
+        return sum - transaction.amountCents;
+      default:
+        return sum;
+    }
+  }, 0);
+}
+
+type Day = { key: string; date: Date; entries: Transaction[] };
+
+/**
+ * Splits the month into days, newest first.
+ *
+ * The feed arrives already sorted newest-first from Firestore, so grouping
+ * just walks it and starts a new bucket whenever the date changes — the order
+ * within a day is preserved rather than re-sorted, and no day can appear twice.
+ */
+function byDay(transactions: Transaction[]): Day[] {
+  const days: Day[] = [];
+
+  for (const transaction of transactions) {
+    const key = dayKey(transaction.date);
+    const current = days[days.length - 1];
+    if (current && current.key === key) {
+      current.entries.push(transaction);
+    } else {
+      days.push({ key, date: transaction.date, entries: [transaction] });
+    }
+  }
+
+  return days;
 }
 
 function iconFor(transaction: Transaction): IconName {
@@ -67,11 +143,13 @@ function iconFor(transaction: Transaction): IconName {
 export function TransactionList({
   uid,
   transactions,
+  accounts,
   loading,
   onEdit,
 }: {
   uid: string | null;
   transactions: Transaction[];
+  accounts: AccountLookup;
   loading: boolean;
   onEdit: (transaction: Transaction) => void;
 }) {
@@ -125,7 +203,7 @@ export function TransactionList({
     "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-40";
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-5">
       {error ? (
         <p
           role="alert"
@@ -135,94 +213,124 @@ export function TransactionList({
         </p>
       ) : null}
 
-      <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
-        {transactions.map((transaction) => {
-          const amount = amountDisplay(transaction);
-          const label = describe(transaction);
-          const confirming = confirmingId === transaction.id;
-          const pending = pendingId === transaction.id;
+      {byDay(transactions).map((day) => {
+        const dayNet = netFor(day.entries);
 
-          return (
-            <li
-              key={transaction.id}
-              className="flex items-center gap-3 px-4 py-3.5 sm:gap-4 sm:px-5"
-            >
-              <span
-                aria-hidden
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-muted text-muted"
-              >
-                <Icon name={iconFor(transaction)} className="h-4.5 w-4.5" />
-              </span>
-
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-foreground">
-                  {label}
+        return (
+          <section key={day.key} className="flex flex-col gap-2">
+            {/* The day is stated once, above its entries, with what it came to.
+                Scanning a month is looking for the day something happened. */}
+            <div className="flex items-baseline justify-between gap-3 px-1">
+              <h3 className="text-sm font-medium text-foreground">
+                {formatDayHeading(day.date)}
+              </h3>
+              {dayNet === 0 ? null : (
+                <p
+                  className={`shrink-0 text-xs font-medium tabular-nums ${
+                    dayNet > 0 ? "text-positive" : "text-negative"
+                  }`}
+                >
+                  {formatSignedMoney(dayNet)}
                 </p>
-                <p className="truncate text-xs text-muted">
-                  {formatDay(transaction.date)}
-                  {transaction.note ? ` · ${transaction.note}` : ""}
-                </p>
-              </div>
-
-              {confirming ? (
-                <div className="flex shrink-0 items-center gap-2">
-                  <span className="hidden text-xs text-muted sm:inline">
-                    Delete and undo it?
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmingId(null)}
-                    disabled={pending}
-                    className="rounded-md px-2 py-1 text-xs font-medium text-muted transition-colors hover:text-foreground disabled:opacity-60"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(transaction)}
-                    disabled={pending}
-                    className="rounded-md bg-negative px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-                  >
-                    {pending ? "Deleting…" : "Delete"}
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div
-                    className={`shrink-0 text-sm font-medium tabular-nums ${amount.tone}`}
-                  >
-                    {amount.text}
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => onEdit(transaction)}
-                      disabled={!uid}
-                      aria-label={`Edit ${label} on ${formatDay(transaction.date)}`}
-                      className={`${iconButton} hover:text-foreground`}
-                    >
-                      <Icon name="pencil" className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setError(null);
-                        setConfirmingId(transaction.id);
-                      }}
-                      disabled={!uid}
-                      aria-label={`Delete ${label} on ${formatDay(transaction.date)}`}
-                      className={`${iconButton} hover:text-negative`}
-                    >
-                      <Icon name="trash" className="h-4 w-4" />
-                    </button>
-                  </div>
-                </>
               )}
-            </li>
-          );
-        })}
-      </ul>
+            </div>
+
+            <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
+              {day.entries.map((transaction) => {
+                const amount = amountDisplay(transaction);
+                const label = describe(transaction, accounts);
+                const detail = detailLine(transaction, accounts);
+                const confirming = confirmingId === transaction.id;
+                const pending = pendingId === transaction.id;
+
+                return (
+                  <li
+                    key={transaction.id}
+                    className="flex items-center gap-3 px-4 py-3.5 sm:gap-4 sm:px-5"
+                  >
+                    <span
+                      aria-hidden
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-muted text-muted"
+                    >
+                      <Icon
+                        name={iconFor(transaction)}
+                        className="h-4.5 w-4.5"
+                      />
+                    </span>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {label}
+                      </p>
+                      {/* A transfer with no note has nothing left to say here —
+                          the row above already names both accounts. */}
+                      {detail ? (
+                        <p className="truncate text-xs text-muted">{detail}</p>
+                      ) : null}
+                    </div>
+
+                    {confirming ? (
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="hidden text-xs text-muted sm:inline">
+                          Delete and undo it?
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingId(null)}
+                          disabled={pending}
+                          className="rounded-md px-2 py-1 text-xs font-medium text-muted transition-colors hover:text-foreground disabled:opacity-60"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(transaction)}
+                          disabled={pending}
+                          className="rounded-md bg-negative px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                        >
+                          {pending ? "Deleting…" : "Delete"}
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div
+                          className={`shrink-0 text-sm font-medium tabular-nums ${amount.tone}`}
+                        >
+                          {amount.text}
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => onEdit(transaction)}
+                            disabled={!uid}
+                            aria-label={`Edit ${label} on ${formatDay(transaction.date)}`}
+                            className={`${iconButton} hover:text-foreground`}
+                          >
+                            <Icon name="pencil" className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setError(null);
+                              setConfirmingId(transaction.id);
+                            }}
+                            disabled={!uid}
+                            aria-label={`Delete ${label} on ${formatDay(transaction.date)}`}
+                            className={`${iconButton} hover:text-negative`}
+                          >
+                            <Icon name="trash" className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
     </div>
   );
 }
