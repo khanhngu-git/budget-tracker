@@ -2,15 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
-import { ensureAccounts, subscribeAccounts } from "./accounts";
+import { backfillAccounts, subscribeAccounts } from "./accounts";
 import { migrateLegacyGoals, subscribeGoals, type GoalMap } from "./goals";
 import { subscribeProfile } from "./profile";
 import { addMonths, endOfMonth, monthKey, startOfMonth } from "./format";
 import { applyLedger, sumBalances, type Deltas } from "./ledger";
 import { subscribeTransactionsFrom } from "./transactions";
+import type { HistoryPeriod } from "./analytics";
 import type { Account, Transaction } from "./types";
 
 export { addMonths, endOfMonth, startOfMonth };
+export type { HistoryPeriod };
 
 /**
  * How far back the growth chart looks — and therefore how much of the ledger
@@ -18,6 +20,34 @@ export { addMonths, endOfMonth, startOfMonth };
  * further would cost reads for months nobody scrolls to.
  */
 export const HISTORY_MONTHS = 12;
+
+/** Buckets the growth chart plots, and how many of each it shows. */
+export const HISTORY_POINTS: Record<HistoryPeriod, number> = {
+  daily: 30,
+  weekly: 12,
+  monthly: 12,
+  yearly: 5,
+};
+
+export const HISTORY_PERIOD_LABELS: Record<HistoryPeriod, string> = {
+  daily: "Daily",
+  weekly: "Weekly",
+  monthly: "Monthly",
+  yearly: "Yearly",
+};
+
+/**
+ * The ledger window a period needs.
+ *
+ * A month, a week and a day all fit inside the year that's loaded anyway, so
+ * switching between them costs nothing. Years are the one view that can't be
+ * answered from a year of entries, so it — and only it — widens the window.
+ */
+export function historyMonthsFor(period: HistoryPeriod): number {
+  return period === "yearly"
+    ? HISTORY_POINTS.yearly * 12
+    : HISTORY_MONTHS;
+}
 
 /** Stable empty values, so "not loaded yet" doesn't churn referential identity. */
 const EMPTY_ACCOUNTS: Account[] = [];
@@ -51,8 +81,9 @@ function balancesOf(accounts: Account[]): Deltas {
  * is derived by comparing keys during render rather than by flipping a loading
  * flag from inside an effect (which would cascade renders on every change).
  */
-export function useBudget(monthStart: Date) {
+export function useBudget(monthStart: Date, historyPeriod: HistoryPeriod) {
   const { user } = useAuth();
+  const historyMonths = historyMonthsFor(historyPeriod);
   const uid = user?.uid ?? null;
   const monthTime = monthStart.getTime();
 
@@ -86,7 +117,7 @@ export function useBudget(monthStart: Date) {
 
     // Fire-and-forget: if this fails, the subscription below surfaces the
     // problem through the same error channel.
-    ensureAccounts(uid).catch(() => {
+    backfillAccounts(uid).catch(() => {
       setError("Couldn't set up your accounts. Check your Firestore rules.");
     });
 
@@ -105,8 +136,8 @@ export function useBudget(monthStart: Date) {
   // this twice and could disagree with each other mid-update.
   useEffect(() => {
     if (!uid) return;
-    const key = `${uid}:${monthTime}`;
-    const from = addMonths(new Date(monthTime), -(HISTORY_MONTHS - 1));
+    const key = `${uid}:${monthTime}:${historyMonths}`;
+    const from = addMonths(new Date(monthTime), -(historyMonths - 1));
 
     return subscribeTransactionsFrom(
       uid,
@@ -114,7 +145,7 @@ export function useBudget(monthStart: Date) {
       (next) => setLedgerState({ key, value: next }),
       () => setError("Couldn't load transactions. Check your Firestore rules."),
     );
-  }, [uid, monthTime]);
+  }, [uid, monthTime, historyMonths]);
 
   useEffect(() => {
     if (!uid) return;
@@ -153,7 +184,8 @@ export function useBudget(monthStart: Date) {
   }, [uid]);
 
   const accountsReady = uid !== null && accountsState.key === uid;
-  const ledgerReady = uid !== null && ledgerState.key === `${uid}:${monthTime}`;
+  const ledgerReady =
+    uid !== null && ledgerState.key === `${uid}:${monthTime}:${historyMonths}`;
   const goalsReady = uid !== null && goalsState.key === `${uid}:${monthTime}`;
   const profileReady = uid !== null && profileState.key === uid;
 
@@ -225,7 +257,7 @@ export function useBudget(monthStart: Date) {
     closingBalances,
     /** Entries dated inside the viewed month. */
     transactions,
-    /** The whole loaded window — a year back, for the growth chart. */
+    /** The whole loaded window — at least a year back, for the growth chart. */
     ledger,
     goals,
     totalCents,

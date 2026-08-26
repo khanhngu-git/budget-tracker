@@ -23,13 +23,6 @@ import {
 
 export { accountDoc, accountsPath };
 
-/** The set a brand-new user starts with. They can rename or replace any of it. */
-const DEFAULT_ACCOUNTS: { id: string; name: string; type: AccountType }[] = [
-  { id: "spending", name: "Spending", type: "spending" },
-  { id: "savings", name: "Savings", type: "savings" },
-  { id: "investments", name: "Investments", type: "investments" },
-];
-
 /** One-tap starting points for the add-account form; all of it stays editable. */
 export const ACCOUNT_PRESETS: { name: string; type: AccountType }[] = [
   { name: "Cash", type: "cash" },
@@ -53,7 +46,7 @@ function readBalance(data: DocumentData | undefined): number {
  * The first build had exactly three accounts whose document id *was* their
  * type and which stored no name at all. Rather than gate the whole app behind
  * a migration, every read tolerates that shape — so the UI is correct on the
- * very first snapshot, before `ensureAccounts` has written anything back.
+ * very first snapshot, before `backfillAccounts` has written anything back.
  */
 function toAccount(
   id: string,
@@ -88,28 +81,18 @@ export function normaliseName(name: string): string {
 }
 
 /**
- * Gives a new user their starting accounts, and brings an old user's documents
- * up to the nameable shape.
+ * Brings documents written by an older build up to the nameable shape.
+ *
+ * Nothing is created here. A new user picks their own accounts during
+ * onboarding, because guessing three for them means everyone starts with a
+ * "Savings" they may not have and has to work out that it's safe to delete.
  *
  * Safe to call on every load: an existing balance is never written, and the
  * backfill only ever adds the fields it finds missing.
  */
-export async function ensureAccounts(uid: string): Promise<void> {
+export async function backfillAccounts(uid: string): Promise<void> {
   const existing = await getDocs(accountsPath(uid));
-
-  if (existing.empty) {
-    const batch = writeBatch(db);
-    DEFAULT_ACCOUNTS.forEach((account, index) => {
-      batch.set(accountDoc(uid, account.id), {
-        name: account.name,
-        type: account.type,
-        balanceCents: 0,
-        order: index,
-      });
-    });
-    await batch.commit();
-    return;
-  }
+  if (existing.empty) return;
 
   const batch = writeBatch(db);
   let pending = 0;

@@ -7,12 +7,16 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { startOfMonth, useBudget } from "./use-budget";
+import { startOfMonth, useBudget, type HistoryPeriod } from "./use-budget";
 
 type BudgetContextValue = ReturnType<typeof useBudget> & {
   /** Local midnight on the 1st of the month currently being viewed. */
   monthStart: Date;
   setMonthStart: (next: Date) => void;
+  /** The bucket the growth chart plots. Lives here because it decides how
+      much of the ledger the subscription below has to load. */
+  historyPeriod: HistoryPeriod;
+  setHistoryPeriod: (next: HistoryPeriod) => void;
 };
 
 const BudgetContext = createContext<BudgetContextValue | null>(null);
@@ -29,11 +33,18 @@ const BudgetContext = createContext<BudgetContextValue | null>(null);
  */
 export function BudgetProvider({ children }: { children: ReactNode }) {
   const [monthStart, setMonthStart] = useState(() => startOfMonth(new Date()));
-  const budget = useBudget(monthStart);
+  const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>("monthly");
+  const budget = useBudget(monthStart, historyPeriod);
 
   const value = useMemo(
-    () => ({ ...budget, monthStart, setMonthStart }),
-    [budget, monthStart],
+    () => ({
+      ...budget,
+      monthStart,
+      setMonthStart,
+      historyPeriod,
+      setHistoryPeriod,
+    }),
+    [budget, monthStart, historyPeriod],
   );
 
   return (

@@ -2,10 +2,19 @@ import type { IconName } from "@/components/ui/icon";
 import { categoryIcon, categoryLabel } from "./categories";
 import type { GoalMap } from "./goals";
 import {
+  addDays,
   addMonths,
+  addYears,
+  endOfMonth,
+  formatDayLong,
+  formatDayShort,
+  formatMonthLabel,
   formatMonthShort,
   formatMoney,
-  isInMonth,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  startOfYear,
 } from "./format";
 import { applyLedger, sumBalances, type Deltas } from "./ledger";
 import {
@@ -119,46 +128,118 @@ export function accountActivity(
 
 /* ── Balances over time ─────────────────────────────────────────────── */
 
+/** The bucket the growth chart plots one point per. */
+export type HistoryPeriod = "daily" | "weekly" | "monthly" | "yearly";
+
 export type BalancePoint = {
-  monthStart: Date;
-  /** "Aug" — the axis carries the year. */
+  /** Start of the bucket this point closes. */
+  start: Date;
+  /** Exclusive end — the instant these balances were true as of. */
+  end: Date;
+  /** "Aug 14", "Aug", "2026" — the axis carries whatever the label leaves out. */
   label: string;
-  /** Closing balance per account id at the end of that month. */
+  /** The same moment named in full, for the readout line that has the room. */
+  caption: string;
+  /** Closing balance per account id at the end of that bucket. */
   balances: Deltas;
   totalCents: number;
 };
 
+function startOfPeriod(date: Date, period: HistoryPeriod): Date {
+  switch (period) {
+    case "daily":
+      return startOfDay(date);
+    case "weekly":
+      return startOfWeek(date);
+    case "monthly":
+      return startOfMonth(date);
+    case "yearly":
+      return startOfYear(date);
+  }
+}
+
+function addPeriods(start: Date, period: HistoryPeriod, delta: number): Date {
+  switch (period) {
+    case "daily":
+      return addDays(start, delta);
+    case "weekly":
+      return addDays(start, delta * 7);
+    case "monthly":
+      return addMonths(start, delta);
+    case "yearly":
+      return addYears(start, delta);
+  }
+}
+
+function labelFor(start: Date, period: HistoryPeriod): string {
+  switch (period) {
+    case "daily":
+    case "weekly":
+      return formatDayShort(start);
+    case "monthly":
+      return formatMonthShort(start);
+    case "yearly":
+      return String(start.getFullYear());
+  }
+}
+
+function captionFor(start: Date, period: HistoryPeriod): string {
+  switch (period) {
+    case "daily":
+      return formatDayLong(start);
+    case "weekly":
+      return `Week of ${formatDayLong(start)}`;
+    case "monthly":
+      return formatMonthLabel(start);
+    case "yearly":
+      return String(start.getFullYear());
+  }
+}
+
 /**
- * What each account was worth at the close of each of the last `months`
- * months, ending with the month on screen.
+ * What each account was worth at the close of each of the last `count`
+ * days, weeks, months or years, ending with the month on screen.
  *
  * Derived by rewinding rather than replaying from the beginning of time: start
- * from the balances we already know, then take each month's entries back off
- * to get the month before it. That means the months people actually look at —
- * the recent ones — cost the fewest reads, and the chart can never disagree
+ * from the balances we already know, then take each bucket's entries back off
+ * to get the bucket before it. That means the periods people actually look at
+ * — the recent ones — cost the fewest reads, and the chart can never disagree
  * with the account cards above it, because both come from the same figure.
  */
 export function balanceHistory(
   closing: Readonly<Deltas>,
   monthStart: Date,
   ledger: Transaction[],
-  months: number,
+  period: HistoryPeriod,
+  count: number,
 ): BalancePoint[] {
+  // `closing` is what the accounts held when the viewed month ended, so that
+  // instant is the only place the rewind can honestly start from.
+  const anchorEnd = endOfMonth(monthStart);
+
   const points: BalancePoint[] = [];
   let balances: Deltas = { ...closing };
-  let cursor = monthStart;
+  let end = anchorEnd;
+  // The newest bucket is the one the anchor falls in, cut short at the anchor:
+  // a month ending mid-week must not imply days that haven't happened yet.
+  let start = startOfPeriod(new Date(anchorEnd.getTime() - 1), period);
 
-  for (let step = 0; step < months; step += 1) {
+  for (let step = 0; step < count; step += 1) {
     points.push({
-      monthStart: cursor,
-      label: formatMonthShort(cursor),
+      start,
+      end,
+      label: labelFor(start, period),
+      caption: captionFor(start, period),
       balances,
       totalCents: sumBalances(balances),
     });
 
-    const inMonth = ledger.filter((entry) => isInMonth(entry.date, cursor));
-    balances = applyLedger(balances, inMonth, -1);
-    cursor = addMonths(cursor, -1);
+    const inside = ledger.filter(
+      (entry) => entry.date >= start && entry.date < end,
+    );
+    balances = applyLedger(balances, inside, -1);
+    end = start;
+    start = addPeriods(start, period, -1);
   }
 
   return points.reverse();
