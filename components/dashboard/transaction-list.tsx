@@ -119,9 +119,10 @@ type Day = { key: string; date: Date; entries: Transaction[] };
 /**
  * Splits the month into days, newest first.
  *
- * The feed arrives already sorted newest-first from Firestore, so grouping
- * just walks it and starts a new bucket whenever the date changes — the order
- * within a day is preserved rather than re-sorted, and no day can appear twice.
+ * The feed arrives sorted newest-first — by day, and by when each entry was
+ * recorded within the day — so grouping just walks it and starts a new bucket
+ * whenever the date changes. That order is preserved rather than re-sorted,
+ * and no day can appear twice.
  */
 function byDay(transactions: Transaction[]): Day[] {
   const days: Day[] = [];
@@ -271,8 +272,19 @@ export function TransactionList({
                     </span>
 
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {label}
+                      <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                        <span className="truncate">{label}</span>
+                        {/* Entries nobody typed. Without this they simply
+                            appear, and an entry you don't remember making is
+                            indistinguishable from a bug. */}
+                        {transaction.recurringId ? (
+                          <span
+                            title="Added by a recurring entry"
+                            className="shrink-0 text-muted"
+                          >
+                            <Icon name="repeat" className="h-3.5 w-3.5" />
+                          </span>
+                        ) : null}
                       </p>
                       {/* A transfer with no note has nothing left to say here —
                           the row above already names both accounts. */}

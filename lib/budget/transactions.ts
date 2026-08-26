@@ -175,6 +175,47 @@ export async function addTransaction(
 }
 
 /**
+ * Writes a run of entries and settles their combined effect, inside a
+ * transaction the caller already owns.
+ *
+ * The combining is the point. A Firestore transaction must finish every read
+ * before its first write, so settling each entry in turn would read an account
+ * it had already written and be rejected. Summing the deltas first means the
+ * accounts are read once however many entries are landing — which is what lets
+ * a schedule that has been dormant for a year catch up in a single step.
+ *
+ * The transfer overdraft check is deliberately skipped: these entries are
+ * dated in the past by the time anything posts them, and refusing one would
+ * stall the schedule rather than prevent the movement it is recording.
+ */
+export async function addEntriesInTransaction(
+  tx: FirestoreTransaction,
+  uid: string,
+  entries: EntryInput[],
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  if (entries.length === 0) return;
+  for (const entry of entries) validate(entry);
+
+  const combined: Deltas = {};
+  for (const entry of entries) {
+    for (const [accountId, delta] of Object.entries(deltasForInput(entry))) {
+      combined[accountId] = (combined[accountId] ?? 0) + delta;
+    }
+  }
+
+  await settleBalances(tx, uid, {}, combined, null);
+
+  for (const entry of entries) {
+    tx.set(doc(transactionsPath(uid)), {
+      ...documentFor(entry),
+      ...extra,
+      createdAt: serverTimestamp(),
+    });
+  }
+}
+
+/**
  * Rewrites an existing entry and re-settles the balances, so correcting a typo
  * fixes the history and the money in the same step.
  *
@@ -385,13 +426,35 @@ export function subscribeTransactionsFrom(
       where("date", ">=", Timestamp.fromDate(from)),
       orderBy("date", "desc"),
     ),
-    (snapshot) => onChange(snapshot.docs.map(toTransaction)),
+    (snapshot) => onChange(snapshot.docs.map(toTransaction).sort(newestFirst)),
     onError,
   );
 }
 
+/**
+ * Newest at the top, and newest *recorded* at the top within a day.
+ *
+ * `orderBy("date", "desc")` gets the days right but can't order inside one:
+ * entries are dated by a date input, so every entry on a given day sits at
+ * local midnight and ties exactly. Firestore settles a tie on the document
+ * id, which is a random auto-id — so an entry added just now would appear at
+ * whatever position its id happened to sort to. Ordering the tie by when it
+ * was written puts it where the user just put it.
+ *
+ * Sorted here rather than in the query: a second `orderBy` would need a
+ * composite index, and — because `serverTimestamp()` reads back empty until
+ * the server acks — would drop a just-added entry out of the result entirely
+ * until the round trip finished.
+ */
+function newestFirst(a: Transaction, b: Transaction): number {
+  const byDate = b.date.getTime() - a.date.getTime();
+  if (byDate !== 0) return byDate;
+  return (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0);
+}
+
 function toTransaction(document: QueryDocumentSnapshot): Transaction {
   const data = document.data();
+  const created = data.createdAt as Timestamp | undefined;
   return {
     id: document.id,
     kind: data.kind,
@@ -401,5 +464,14 @@ function toTransaction(document: QueryDocumentSnapshot): Transaction {
     categoryId: data.categoryId ?? null,
     note: data.note ?? "",
     date: (data.date as Timestamp)?.toDate() ?? new Date(),
+    // `serverTimestamp()` reads back empty on the local snapshot that fires
+    // the instant an entry is added, and an entry with no time to sort by
+    // would sink to the bottom of its day and then jump to the top when the
+    // server acked. It was written now, so say so and let it stay put.
+    createdAt:
+      created?.toDate() ??
+      (document.metadata.hasPendingWrites ? new Date() : null),
+    recurringId:
+      typeof data.recurringId === "string" ? data.recurringId : null,
   } satisfies Transaction;
 }
