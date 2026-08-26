@@ -7,7 +7,11 @@ import { Field, Select, TextInput } from "@/components/ui/field";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { checkAllocation, allocationOf } from "@/lib/budget/analytics";
 import { categoriesFor } from "@/lib/budget/categories";
-import { formatMoney, parseAmountToCents } from "@/lib/budget/format";
+import {
+  formatMoney,
+  formatPercent,
+  parseAmountToCents,
+} from "@/lib/budget/format";
 import { setGoal, type GoalMap } from "@/lib/budget/goals";
 import { goalId, type Goal, type GoalScope } from "@/lib/budget/types";
 
@@ -79,6 +83,14 @@ export function GoalDialog({
     scope === "income"
       ? unallocatedCents
       : unallocatedCents + (existing?.amountCents ?? 0);
+
+  // The same figure the goal cards show, computed live so the reader sees what
+  // slice of their income they're committing while they're still typing it.
+  const typedCents = parseAmountToCents(amount);
+  const shareOfIncome =
+    scope === "income" || typedCents === null || !incomeTargetCents
+      ? null
+      : typedCents / incomeTargetCents;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -175,12 +187,22 @@ export function GoalDialog({
           htmlFor="goal-amount"
           hint={
             wouldReplace
-              ? `Already set to ${formatMoney(existing.amountCents)} — saving replaces it.`
-              : scope !== "income" && incomeTargetCents !== null
-                ? `${SCOPE_HINT[scope]} ${formatMoney(
+              ? `Already set to ${formatMoney(existing.amountCents)} (${
+                  shareOfIncome === null
+                    ? "no income target yet"
+                    : `you're entering ${formatPercent(shareOfIncome)} of income`
+                }) — saving replaces it.`
+              : shareOfIncome !== null
+                ? `That's ${formatPercent(
+                    shareOfIncome,
+                  )} of your income target. ${formatMoney(
                     Math.max(0, headroomCents),
-                  )} of your income target is still unallocated.`
-                : SCOPE_HINT[scope]
+                  )} of it is still unallocated.`
+                : scope !== "income" && incomeTargetCents !== null
+                  ? `${SCOPE_HINT[scope]} ${formatMoney(
+                      Math.max(0, headroomCents),
+                    )} of your income target is still unallocated.`
+                  : SCOPE_HINT[scope]
           }
         >
           <TextInput

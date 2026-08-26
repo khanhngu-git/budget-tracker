@@ -2,7 +2,7 @@
 
 import { Icon } from "@/components/ui/icon";
 import type { GoalProgress, GoalStatus } from "@/lib/budget/analytics";
-import { formatMoney } from "@/lib/budget/format";
+import { formatMoney, formatPercent } from "@/lib/budget/format";
 
 export const STATUS_COLOR: Record<GoalStatus, string> = {
   good: "var(--positive)",
@@ -149,6 +149,18 @@ export function GoalCard({
             {formatMoney(entry.actualCents)}
           </span>{" "}
           / {formatMoney(entry.targetCents)}
+          {/* The cost in money answers "how much"; the share of income answers
+              "how much of what I earn" — which is the question a plan is
+              actually made of, and the one you can compare across months. */}
+          {entry.shareOfIncome === null ? null : (
+            <>
+              {" · "}
+              <span className="font-medium text-foreground">
+                {formatPercent(entry.shareOfIncome)}
+              </span>{" "}
+              of income
+            </>
+          )}
         </p>
       </div>
     </li>

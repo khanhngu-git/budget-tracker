@@ -62,6 +62,22 @@ export function formatMonthLabel(date: Date): string {
   }).format(date);
 }
 
+/** "Aug" — for axis ticks, where the year is carried by the axis itself. */
+export function formatMonthShort(date: Date): string {
+  return new Intl.DateTimeFormat(LOCALE, { month: "short" }).format(date);
+}
+
+/**
+ * A share as a whole percentage. Anything under 1% that isn't actually zero
+ * gets a decimal rather than rounding down to "0%", which would read as
+ * "nothing" for money that was really allocated.
+ */
+export function formatPercent(share: number): string {
+  const value = share * 100;
+  if (value > 0 && value < 1) return `${value.toFixed(1)}%`;
+  return `${Math.round(value)}%`;
+}
+
 /** Local-time YYYY-MM-DD, for <input type="date"> round-tripping. */
 export function toDateInputValue(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -99,4 +115,29 @@ export function defaultDateFor(monthStart: Date, now: Date = new Date()): Date {
 /** Stable "2026-08" key for the month a date falls in. Used as a document id. */
 export function monthKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/* ── Month boundaries ───────────────────────────────────────────────── */
+
+export function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+/**
+ * Month arithmetic done on the calendar rather than on milliseconds, so a
+ * daylight-saving change can't land the result on the wrong day.
+ */
+export function addMonths(date: Date, delta: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + delta, 1);
+}
+
+export function endOfMonth(monthStart: Date): Date {
+  return addMonths(monthStart, 1);
+}
+
+export function isInMonth(date: Date, monthStart: Date): boolean {
+  return (
+    date.getFullYear() === monthStart.getFullYear() &&
+    date.getMonth() === monthStart.getMonth()
+  );
 }

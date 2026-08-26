@@ -5,66 +5,47 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { ensureAccounts, subscribeAccounts } from "./accounts";
 import { migrateLegacyGoals, subscribeGoals, type GoalMap } from "./goals";
 import { subscribeProfile } from "./profile";
-import { monthKey } from "./format";
-import {
-  subscribeMonthTransactions,
-  subscribeTransactionsFrom,
-  transactionDeltas,
-} from "./transactions";
-import {
-  ACCOUNT_KINDS,
-  type Account,
-  type AccountKind,
-  type Transaction,
-} from "./types";
+import { addMonths, endOfMonth, monthKey, startOfMonth } from "./format";
+import { applyLedger, sumBalances, type Deltas } from "./ledger";
+import { subscribeTransactionsFrom } from "./transactions";
+import type { Account, Transaction } from "./types";
+
+export { addMonths, endOfMonth, startOfMonth };
+
+/**
+ * How far back the growth chart looks — and therefore how much of the ledger
+ * one session loads. A year is the span that makes a trend legible; going
+ * further would cost reads for months nobody scrolls to.
+ */
+export const HISTORY_MONTHS = 12;
 
 /** Stable empty values, so "not loaded yet" doesn't churn referential identity. */
-const EMPTY_ACCOUNTS = Object.freeze(
-  Object.fromEntries(
-    ACCOUNT_KINDS.map((kind) => [kind, { kind, balanceCents: 0 }]),
-  ),
-) as Record<AccountKind, Account>;
-
+const EMPTY_ACCOUNTS: Account[] = [];
 const EMPTY_TRANSACTIONS: Transaction[] = [];
 const EMPTY_GOALS: GoalMap = Object.freeze({});
 
-export function startOfMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-export function addMonths(date: Date, delta: number): Date {
-  return new Date(date.getFullYear(), date.getMonth() + delta, 1);
-}
-
-export function endOfMonth(monthStart: Date): Date {
-  return addMonths(monthStart, 1);
-}
-
-/** Applies a set of deltas to a balance sheet, in the given direction. */
-function shift(
-  balances: Record<AccountKind, Account>,
+/** Applies a run of entries to the balance each account carries. */
+function shiftAccounts(
+  accounts: Account[],
   transactions: Transaction[],
   sign: 1 | -1,
-): Record<AccountKind, Account> {
-  const next = Object.fromEntries(
-    ACCOUNT_KINDS.map((kind) => [
-      kind,
-      { kind, balanceCents: balances[kind].balanceCents },
-    ]),
-  ) as Record<AccountKind, Account>;
+): Account[] {
+  const deltas = applyLedger({}, transactions, sign);
+  return accounts.map((account) => ({
+    ...account,
+    balanceCents: account.balanceCents + (deltas[account.id] ?? 0),
+  }));
+}
 
-  for (const transaction of transactions) {
-    const deltas = transactionDeltas(transaction);
-    for (const kind of ACCOUNT_KINDS) {
-      next[kind].balanceCents += sign * (deltas[kind] ?? 0);
-    }
-  }
-
-  return next;
+function balancesOf(accounts: Account[]): Deltas {
+  return Object.fromEntries(
+    accounts.map((account) => [account.id, account.balanceCents]),
+  );
 }
 
 /**
- * Live accounts + the selected month's transactions for the signed-in user.
+ * Live accounts, the selected month's transactions, and a year of history for
+ * the signed-in user.
  *
  * Each slice of state carries the key it was loaded for, so "is this loaded?"
  * is derived by comparing keys during render rather than by flipping a loading
@@ -77,15 +58,10 @@ export function useBudget(monthStart: Date) {
 
   const [accountsState, setAccountsState] = useState<{
     key: string;
-    value: Record<AccountKind, Account>;
+    value: Account[];
   }>({ key: "", value: EMPTY_ACCOUNTS });
 
-  const [transactionsState, setTransactionsState] = useState<{
-    key: string;
-    value: Transaction[];
-  }>({ key: "", value: EMPTY_TRANSACTIONS });
-
-  const [laterState, setLaterState] = useState<{
+  const [ledgerState, setLedgerState] = useState<{
     key: string;
     value: Transaction[];
   }>({ key: "", value: EMPTY_TRANSACTIONS });
@@ -124,26 +100,18 @@ export function useBudget(monthStart: Date) {
     );
   }, [uid]);
 
+  // One window over the ledger: a year of history, the month on screen, and
+  // everything after it. Three overlapping subscriptions would read most of
+  // this twice and could disagree with each other mid-update.
   useEffect(() => {
     if (!uid) return;
     const key = `${uid}:${monthTime}`;
-
-    return subscribeMonthTransactions(
-      uid,
-      new Date(monthTime),
-      (next) => setTransactionsState({ key, value: next }),
-      () => setError("Couldn't load transactions. Check your Firestore rules."),
-    );
-  }, [uid, monthTime]);
-
-  useEffect(() => {
-    if (!uid) return;
-    const key = `${uid}:${monthTime}`;
+    const from = addMonths(new Date(monthTime), -(HISTORY_MONTHS - 1));
 
     return subscribeTransactionsFrom(
       uid,
-      endOfMonth(new Date(monthTime)),
-      (next) => setLaterState({ key, value: next }),
+      from,
+      (next) => setLedgerState({ key, value: next }),
       () => setError("Couldn't load transactions. Check your Firestore rules."),
     );
   }, [uid, monthTime]);
@@ -185,65 +153,86 @@ export function useBudget(monthStart: Date) {
   }, [uid]);
 
   const accountsReady = uid !== null && accountsState.key === uid;
-  const transactionsReady =
-    uid !== null && transactionsState.key === `${uid}:${monthTime}`;
-
-  const laterReady = uid !== null && laterState.key === `${uid}:${monthTime}`;
+  const ledgerReady = uid !== null && ledgerState.key === `${uid}:${monthTime}`;
   const goalsReady = uid !== null && goalsState.key === `${uid}:${monthTime}`;
   const profileReady = uid !== null && profileState.key === uid;
 
   const liveAccounts = accountsReady ? accountsState.value : EMPTY_ACCOUNTS;
-  const laterTransactions = laterReady ? laterState.value : EMPTY_TRANSACTIONS;
+  const ledger = ledgerReady ? ledgerState.value : EMPTY_TRANSACTIONS;
   const goals = goalsReady ? goalsState.value : EMPTY_GOALS;
-  const transactions = transactionsReady
-    ? transactionsState.value
-    : EMPTY_TRANSACTIONS;
+
+  const monthEndTime = useMemo(
+    () => endOfMonth(new Date(monthTime)).getTime(),
+    [monthTime],
+  );
+
+  const transactions = useMemo(
+    () =>
+      ledger.filter(
+        (entry) =>
+          entry.date.getTime() >= monthTime &&
+          entry.date.getTime() < monthEndTime,
+      ),
+    [ledger, monthTime, monthEndTime],
+  );
+
+  const laterTransactions = useMemo(
+    () => ledger.filter((entry) => entry.date.getTime() >= monthEndTime),
+    [ledger, monthEndTime],
+  );
 
   // What the accounts were worth when the viewed month closed: the running
   // total with everything recorded after that month taken back off. Rewinding
   // from today rather than replaying from the beginning of time means the
   // months people actually look at — the recent ones — cost the fewest reads.
   const accounts = useMemo(
-    () => shift(liveAccounts, laterTransactions, -1),
+    () => shiftAccounts(liveAccounts, laterTransactions, -1),
     [liveAccounts, laterTransactions],
   );
 
   // What rolled in from the month before, before anything in this month.
   const openingAccounts = useMemo(
-    () => shift(accounts, transactions, -1),
+    () => shiftAccounts(accounts, transactions, -1),
     [accounts, transactions],
   );
 
-  const totalCents = useMemo(
-    () =>
-      ACCOUNT_KINDS.reduce((sum, kind) => sum + accounts[kind].balanceCents, 0),
+  const accountsById = useMemo(
+    () => Object.fromEntries(accounts.map((account) => [account.id, account])),
     [accounts],
   );
 
+  const closingBalances = useMemo(() => balancesOf(accounts), [accounts]);
+
+  const totalCents = useMemo(
+    () => sumBalances(closingBalances),
+    [closingBalances],
+  );
+
   const openingTotalCents = useMemo(
-    () =>
-      ACCOUNT_KINDS.reduce(
-        (sum, kind) => sum + openingAccounts[kind].balanceCents,
-        0,
-      ),
+    () => sumBalances(balancesOf(openingAccounts)),
     [openingAccounts],
   );
 
   return {
     uid,
-    /** Closing balances for the month being viewed. */
+    /** Accounts in display order, holding what they closed the viewed month at. */
     accounts,
-    /** Balances carried in from the month before. */
+    /** The same accounts, holding what rolled in from the month before. */
     openingAccounts,
     /** The running, all-time balances a new entry will actually settle against. */
     liveAccounts,
+    accountsById,
+    closingBalances,
+    /** Entries dated inside the viewed month. */
     transactions,
+    /** The whole loaded window — a year back, for the growth chart. */
+    ledger,
     goals,
     totalCents,
     openingTotalCents,
     /** True once we know the user has never answered the balance prompt. */
     needsOpeningBalances: profileReady && !profileState.value,
-    loading: !accountsReady || !transactionsReady || !laterReady,
+    loading: !accountsReady || !ledgerReady,
     goalsLoading: !goalsReady,
     error,
   };
