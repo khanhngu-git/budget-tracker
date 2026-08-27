@@ -8,7 +8,8 @@ import {
 import { db } from "@/lib/firebase/client";
 import { goalsPath } from "./goals";
 import { markOpeningBalancesUnset, profileDoc } from "./profile";
-import { accountsPath, transactionsPath } from "./paths";
+import { setDoc } from "firebase/firestore";
+import { accountsPath, recurringPath, transactionsPath } from "./paths";
 import { monthKey } from "./format";
 
 /**
@@ -76,18 +77,28 @@ function candidateMonths(dates: Date[]): string[] {
 }
 
 /**
- * Deletes every transaction, account and monthly plan, and puts the user back
- * where a brand-new sign-up starts — onboarding included.
+ * Deletes every transaction, account, standing instruction and monthly plan,
+ * and puts the user back where a brand-new sign-up starts — onboarding
+ * included.
  *
- * Preferences survive on purpose: currency, theme and name are not the data
- * being reset, and making someone set them up again would be a second, unasked
- * consequence of the button they pressed.
+ * "Everything" has to mean every collection under the user, not just the ones
+ * that are obviously money: a surviving recurring rule would start posting
+ * entries into the empty books within a day, which looks exactly like a reset
+ * that silently failed. The same goes for anything the user *filled in* rather
+ * than chose — a background photo and a set of starred categories are contents,
+ * not preferences.
+ *
+ * What survives is only what the user would have to set up again for no reason:
+ * their name, their currency, and how the app is drawn. Pictures are not in
+ * that group — a photo is something the user put there, so it goes with the
+ * rest of what they put there.
  */
 export async function resetBudgetData(uid: string): Promise<void> {
-  const [ledger, accounts, legacy] = await Promise.all([
+  const [ledger, accounts, legacy, recurring] = await Promise.all([
     getDocs(transactionsPath(uid)),
     getDocs(accountsPath(uid)),
     getDocs(legacyBudgetsPath(uid)),
+    getDocs(recurringPath(uid)),
   ]);
 
   const dates = ledger.docs
@@ -114,9 +125,20 @@ export async function resetBudgetData(uid: string): Promise<void> {
   // the balances, so an interrupted wipe that has already removed the accounts
   // would leave entries pointing at nothing.
   await deleteAll(ledger.docs.map((entry) => entry.ref));
+  // Before the accounts, and for the same reason: a rule outliving the account
+  // it posts into is a write that can only fail.
+  await deleteAll(recurring.docs.map((entry) => entry.ref));
   await deleteAll(goalDocs);
   await deleteAll(legacy.docs.map((entry) => entry.ref));
   await deleteAll(accounts.docs.map((entry) => entry.ref));
+
+  // Contents held on the profile document rather than in a collection of their
+  // own. Merged, so the settings that are genuinely preferences are untouched.
+  await setDoc(
+    profileDoc(uid),
+    { backgroundImage: null, avatarImage: null, favouriteCategories: [] },
+    { merge: true },
+  );
 
   // Back to the state a new sign-up is in, so the opening-balances prompt runs
   // again rather than leaving someone with no accounts and no way to be asked.

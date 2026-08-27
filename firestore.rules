@@ -32,7 +32,13 @@ service cloud.firestore {
                               && (!('name' in request.resource.data)
                                   || (request.resource.data.name is string
                                       && request.resource.data.name.size() > 0
-                                      && request.resource.data.name.size() <= 32));
+                                      && request.resource.data.name.size() <= 32))
+                              // A savings target is optional and, when set, is
+                              // a positive whole number of cents like every
+                              // other amount in the app.
+                              && (!('targetCents' in request.resource.data)
+                                  || (request.resource.data.targetCents is int
+                                      && request.resource.data.targetCents > 0));
       }
 
       // Goals: what the user means to earn, put away, invest, or stay under in
@@ -46,7 +52,8 @@ service cloud.firestore {
                               && request.resource.data.amountCents is int
                               && request.resource.data.amountCents > 0
                               && request.resource.data.scope in
-                                 ['income', 'savings', 'investments', 'expense'];
+                                 ['income', 'savings', 'investments',
+                                  'debt', 'expense'];
         allow delete: if isOwner();
       }
 
