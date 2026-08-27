@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   balanceHistory,
   type BalancePoint,
@@ -145,9 +145,25 @@ export function GrowthChart({
   loading: boolean;
 }) {
   const [active, setActive] = useState<number | null>(null);
-  // Hidden rather than removed: a series keeps its slot and its colour while
-  // it's off, so toggling it back on doesn't repaint the ones still showing.
-  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
+  /**
+   * The one series being looked at, or null for all of them.
+   *
+   * Clicking a legend row singles that line out rather than dropping it. With
+   * six accounts on one axis, "show me only this" is the question people
+   * actually have, and answering it by hiding meant five clicks to isolate one
+   * line and five more to get back. Clicking the soloed row again — or picking
+   * a different one — is the whole way out.
+   */
+  const [solo, setSolo] = useState<string | null>(null);
+
+  // Zero on the first frame, full on the next, so the clip has something to
+  // animate between. Runs once — switching period redraws, it doesn't re-sweep.
+  const sweepId = useId();
+  const [swept, setSwept] = useState(false);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setSwept(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   const points = useMemo(
     () =>
@@ -166,19 +182,15 @@ export function GrowthChart({
     [accounts, points],
   );
 
-  const shown = series.filter((entry) => !hidden.has(entry.id));
+  const shown = solo ? series.filter((entry) => entry.id === solo) : series;
 
   function toggle(id: string) {
-    setHidden((current) => {
-      const next = new Set(current);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
+    setSolo((current) => (current === id ? null : id));
   }
 
-  // The axis follows what's on screen. Scaling to the hidden series too would
-  // make hiding the total pointless — the whole reason to drop it is to get a
-  // scale the smaller accounts can actually be read against.
+  // The axis follows what's on screen. Scaling to the whole set while one
+  // series is soloed would defeat the point of soloing it — getting a scale
+  // that one account can actually be read against.
   const everyValue = shown.flatMap((entry) => entry.values);
   const ticks = ticksFor(Math.min(...everyValue, 0), Math.max(...everyValue, 0));
   const low = ticks[0];
@@ -326,19 +338,43 @@ export function GrowthChart({
                 />
               ) : null}
 
-              {shown.map((entry) => (
-                <path
-                  key={entry.id}
-                  d={path(entry.values)}
-                  fill="none"
-                  stroke={entry.color}
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeDasharray={entry.aggregate ? "6 4" : undefined}
-                  vectorEffect="non-scaling-stroke"
-                />
-              ))}
+              {/* Drawn left to right on arrival, which is the direction time
+                  runs on this axis — so the reveal reads as the history being
+                  laid down rather than as a flourish. Done with a clip that
+                  sweeps rather than a dash offset, because the aggregate line
+                  already spends its dash pattern on being dashed. */}
+              <defs>
+                <clipPath id={sweepId}>
+                  <rect
+                    x={PAD.left}
+                    y={0}
+                    width={PLOT_W}
+                    height={PAD.top + PLOT_H + PAD.bottom}
+                    style={{
+                      transformOrigin: `${PAD.left}px 0px`,
+                      transform: `scaleX(${swept ? 1 : 0})`,
+                      transition: "transform 900ms cubic-bezier(0.22, 1, 0.36, 1)",
+                    }}
+                    className="motion-reduce:!transform-none motion-reduce:transition-none"
+                  />
+                </clipPath>
+              </defs>
+
+              <g clipPath={`url(#${sweepId})`}>
+                {shown.map((entry) => (
+                  <path
+                    key={entry.id}
+                    d={path(entry.values)}
+                    fill="none"
+                    stroke={entry.color}
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeDasharray={entry.aggregate ? "6 4" : undefined}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+              </g>
 
               {/* Markers on the hovered month only — a dot on every point on
                   every line would bury the lines themselves. The surface ring
@@ -368,10 +404,14 @@ export function GrowthChart({
               <span className="text-xs font-medium uppercase tracking-wide text-muted">
                 {readout.caption}
               </span>
-              <span className="text-xs text-muted">Tap a row to hide it</span>
+              <span className="text-xs text-muted">
+                {solo ? "Tap again to show all" : "Tap a row to single it out"}
+              </span>
             </li>
             {series.map((entry) => {
-              const off = hidden.has(entry.id);
+              // Dimmed, not struck through: the row is still a live series,
+              // just not the one in focus.
+              const off = solo !== null && solo !== entry.id;
               return (
                 <li key={entry.id}>
                   {/* The legend is the control: the thing naming a line is the
@@ -387,14 +427,14 @@ export function GrowthChart({
                       aria-hidden
                       className="h-0.5 w-4 shrink-0 rounded-full"
                       style={{
-                        backgroundColor: off ? "var(--border)" : entry.color,
-                        opacity: entry.aggregate && !off ? 0.7 : 1,
+                        backgroundColor: entry.color,
+                        opacity: off ? 0.3 : entry.aggregate ? 0.7 : 1,
                       }}
                     />
                     <span
                       className={`min-w-0 flex-1 truncate text-sm ${
                         off
-                          ? "text-muted line-through decoration-muted/70"
+                          ? "text-muted/50"
                           : entry.aggregate
                             ? "font-medium text-foreground"
                             : "text-muted"

@@ -1,8 +1,7 @@
 "use client";
 
-import { ExpenseChart } from "@/components/dashboard/expense-chart";
+import { ExpensePie } from "@/components/dashboard/expense-pie";
 import { GrowthChart } from "@/components/dashboard/growth-chart";
-import { MonthVerdict } from "@/components/dashboard/month-verdict";
 import { Section } from "@/components/dashboard/section";
 import { useBudgetContext } from "@/lib/budget/budget-context";
 import { formatMonthLabel } from "@/lib/budget/format";
@@ -10,10 +9,10 @@ import { formatMonthLabel } from "@/lib/budget/format";
 /**
  * The workings behind the Overview.
  *
- * Overview answers "how much have I got, and am I on track?" — two questions,
- * two glances. Everything that explains *why* the answer is what it is lives
- * here instead, where it can take the room it needs without pushing the
- * balances off the top of the screen.
+ * Side by side rather than stacked. The two charts answer questions people ask
+ * together — "how is it going?" and "what is it going on?" — and stacking them
+ * put the second below the fold, which made comparing them a matter of memory.
+ * Halving the trend to fit is a fair trade: its job is a shape, not a reading.
  */
 export default function StatisticsPage() {
   const {
@@ -28,14 +27,9 @@ export default function StatisticsPage() {
     setHistoryPeriod,
   } = useBudgetContext();
 
-  const monthLabel = formatMonthLabel(monthStart);
-
   return (
-    <>
-      <Section
-        title="Over time"
-        subtitle="How the balances have moved, over whichever span you pick."
-      >
+    <Section title={`${formatMonthLabel(monthStart)} in detail`}>
+      <div className="grid gap-4 lg:grid-cols-2">
         <GrowthChart
           accounts={accounts}
           closingBalances={closingBalances}
@@ -45,16 +39,8 @@ export default function StatisticsPage() {
           onPeriodChange={setHistoryPeriod}
           loading={loading}
         />
-      </Section>
-
-      <Section
-        divided
-        title={`Inside ${monthLabel}`}
-        subtitle="What came in, what went out, and what it went on."
-      >
-        <MonthVerdict transactions={settledTransactions} monthLabel={monthLabel} />
-        <ExpenseChart transactions={settledTransactions} loading={loading} />
-      </Section>
-    </>
+        <ExpensePie transactions={settledTransactions} loading={loading} />
+      </div>
+    </Section>
   );
 }

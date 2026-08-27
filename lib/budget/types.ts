@@ -89,7 +89,34 @@ export type Account = {
   balanceCents: number;
   /** Display position, so reordering never depends on the name. */
   order: number;
+  /**
+   * What the user is saving up to, in cents, or null for no target.
+   *
+   * Distinct from a `savings` goal, which is a floor for one month and resets
+   * with it. This is the cumulative figure — "£15,000 in the emergency fund" —
+   * so progress is measured against the account's balance rather than against
+   * anything that happened this month.
+   */
+  targetCents: number | null;
 };
+
+/**
+ * Whether it makes sense to be saving up *to* something in this account.
+ *
+ * A target on a spending account would measure a balance that is meant to be
+ * drawn down every month, and one on a debt account would invert — paying it
+ * off moves toward zero, not toward a figure. Both would read as progress
+ * bars that mean nothing.
+ */
+export function canHoldTarget(type: AccountType): boolean {
+  return type === "savings" || type === "investments";
+}
+
+/** How far an account has come toward its target, clamped to 0…1. */
+export function targetProgress(account: Account): number | null {
+  if (!account.targetCents || account.targetCents <= 0) return null;
+  return Math.max(0, Math.min(1, account.balanceCents / account.targetCents));
+}
 
 /**
  * Categorical slots 1-8 of the validated palette, assigned to accounts by
@@ -203,13 +230,15 @@ export type RecurringRule = {
  * rather than stored — a savings target you're meant to stay *below* would be
  * a bug, not a feature.
  *
- * `savings` and `investments` name an account *type*, not one account, so
- * splitting your savings across three pots doesn't split the goal with it.
+ * `savings`, `investments` and `debt` each name an account *type*, not one
+ * account, so splitting your savings across three pots — or owing on two cards
+ * — doesn't split the goal with it.
  */
 export const GOAL_SCOPES = [
   "income",
   "savings",
   "investments",
+  "debt",
   "expense",
 ] as const;
 export type GoalScope = (typeof GOAL_SCOPES)[number];
@@ -219,6 +248,15 @@ export type GoalDirection = "atLeast" | "under";
 export function goalDirection(scope: GoalScope): GoalDirection {
   return scope === "expense" ? "under" : "atLeast";
 }
+
+/**
+ * Why `debt` is a floor and not a ceiling.
+ *
+ * Paying a loan down is money you *put in*, exactly like a savings transfer —
+ * "at least £300 off the card this month" is the goal people actually set. The
+ * balance moving up toward zero is what progress looks like, which is why this
+ * measures the repayment rather than the balance.
+ */
 
 export type Goal = {
   /** Document id: "expense:groceries", "income", "savings", "investments". */

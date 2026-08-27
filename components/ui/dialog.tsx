@@ -17,6 +17,7 @@ export function Dialog({
   title,
   description,
   size = "md",
+  dismissible = true,
   children,
 }: {
   open: boolean;
@@ -25,6 +26,13 @@ export function Dialog({
   description?: string;
   /** "lg" for a dialog whose content is a grid rather than a column of fields. */
   size?: keyof typeof WIDTHS;
+  /**
+   * False for a dialog there is no sensible way to be behind — first-run setup,
+   * where dismissing leaves someone on a dashboard that cannot record anything
+   * and offers no hint why. Escape and the backdrop stop closing it; the only
+   * way out is a control inside.
+   */
+  dismissible?: boolean;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -56,11 +64,22 @@ export function Dialog({
       // close its parent too, and picking a category would dismiss the form
       // before the choice could be saved. Only act on our own close.
       onClose={(event) => {
-        if (event.target === ref.current) onClose();
+        if (event.target !== ref.current) return;
+        // Escape closes a native <dialog> before any handler can veto it, so
+        // an undismissable one is re-opened here rather than prevented — the
+        // element never actually leaves the top layer between the two.
+        if (!dismissible) {
+          ref.current?.showModal();
+          return;
+        }
+        onClose();
+      }}
+      onCancel={(event) => {
+        if (!dismissible) event.preventDefault();
       }}
       onClick={(event) => {
         // Clicks on the backdrop are reported against the dialog element itself.
-        if (event.target === ref.current) onClose();
+        if (event.target === ref.current && dismissible) onClose();
       }}
       className={`m-auto max-h-[calc(100dvh-3rem)] w-[calc(100%-2rem)] ${WIDTHS[size]} rounded-2xl border border-border bg-surface p-0 text-foreground backdrop:bg-black/55`}
     >

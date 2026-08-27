@@ -28,7 +28,3 @@ export function Field({
 export function TextInput({ className = "", ...props }: ComponentProps<"input">) {
   return <input className={`${inputClasses} ${className}`} {...props} />;
 }
-
-export function Select({ className = "", ...props }: ComponentProps<"select">) {
-  return <select className={`${inputClasses} ${className}`} {...props} />;
-}

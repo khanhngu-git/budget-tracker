@@ -59,11 +59,7 @@ export function UserMenu({ tone = "default" }: { tone?: "default" | "light" }) {
           light ? "hover:bg-white/10" : "hover:bg-surface-muted"
         }`}
       >
-        <Avatar
-          preferences={preferences}
-          fallback={user.email ?? ""}
-          size="sm"
-        />
+        <Avatar preferences={preferences} size="sm" />
         {/* The avatar alone carries it on a phone — the name is the first
             thing worth dropping when the row runs out of width. */}
         <span

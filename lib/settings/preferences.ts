@@ -62,6 +62,47 @@ export const CURRENCIES: CurrencyOption[] = [
 
 const CURRENCY_BY_CODE = new Map(CURRENCIES.map((entry) => [entry.code, entry]));
 
+/** Region subtag → currency, for the ones this app actually offers. */
+const CURRENCY_BY_REGION: Record<string, string> = {
+  AU: "AUD", US: "USD", GB: "GBP", NZ: "NZD", CA: "CAD", SG: "SGD",
+  HK: "HKD", JP: "JPY", CN: "CNY", IN: "INR", CH: "CHF", SE: "SEK",
+  NO: "NOK", DK: "DKK", PL: "PLN", CZ: "CZK", ZA: "ZAR", AE: "AED",
+  BR: "BRL", MX: "MXN", KR: "KRW", MY: "MYR", PH: "PHP", TH: "THB",
+  VN: "VND",
+  DE: "EUR", FR: "EUR", ES: "EUR", IT: "EUR", NL: "EUR", IE: "EUR",
+  AT: "EUR", BE: "EUR", PT: "EUR", FI: "EUR", GR: "EUR",
+};
+
+/**
+ * The currency to start someone on, read off the browser's own locale.
+ *
+ * Deliberately *not* the Geolocation API: that puts a permission prompt in
+ * front of a brand-new user to answer a question their locale already answers,
+ * and a denied prompt would leave us where we started. `navigator.language`
+ * needs no permission, is always present, and is the setting the user has
+ * already told their operating system.
+ *
+ * Falls back to Australian dollars, and is only ever a starting point — the
+ * currency is a stored preference the moment anyone changes it.
+ */
+export function guessCurrency(): CurrencyOption {
+  const fallback = currencyOption("AUD");
+  if (typeof navigator === "undefined") return fallback;
+
+  for (const tag of navigator.languages ?? [navigator.language]) {
+    const region = new Intl.Locale(tag).maximize().region;
+    const code = region ? CURRENCY_BY_REGION[region] : undefined;
+    if (code) {
+      const match = CURRENCY_BY_CODE.get(code);
+      // The locale the user actually has beats the one the currency ships
+      // with — an Irish user gets euros grouped the Irish way.
+      if (match) return { ...match, locale: tag };
+    }
+  }
+
+  return fallback;
+}
+
 export function currencyOption(code: string): CurrencyOption {
   return CURRENCY_BY_CODE.get(code) ?? CURRENCIES[0];
 }
@@ -179,33 +220,23 @@ export const MAX_DISPLAY_NAME = 40;
 export const MAX_GENDER_TEXT = 40;
 export const MAX_PRONOUNS = 24;
 
-/* ── Avatar ─────────────────────────────────────────────────────────── */
+/* ── The whole thing ────────────────────────────────────────────────── */
 
 /**
- * A picture without an upload.
+ * The longest side an uploaded image is downscaled to, and the JPEG quality it
+ * is re-encoded at.
  *
- * Storing an image would mean a bucket, its own rules, and a moderation
- * question nobody asked for; a colour and a glyph give the same "that's mine"
- * recognition at a glance for a document field.
+ * Pictures live on the `users/{uid}` document as data URLs rather than in a
+ * storage bucket, which keeps them under the same ownership rule as everything
+ * else and needs no second set of rules to audit. The cost is Firestore's 1MiB
+ * document ceiling, which these two budgets sit comfortably inside: an avatar
+ * lands around 40KB and a background around 300KB, against a document that is
+ * otherwise well under a kilobyte.
  */
-export const AVATAR_COLORS = [
-  "var(--series-1)",
-  "var(--series-2)",
-  "var(--series-3)",
-  "var(--series-4)",
-  "var(--series-5)",
-  "var(--series-6)",
-  "var(--series-7)",
-  "var(--series-8)",
-] as const;
-
-export const AVATAR_EMOJI = [
-  "🙂", "😎", "🦊", "🐨", "🐼", "🐧", "🦉", "🐝",
-  "🌱", "🌊", "🔥", "⭐", "🌙", "🍀", "🎧", "📚",
-  "⚽", "🎸", "☕", "🍜", "🚀", "🏔️", "🧊", "💎",
-] as const;
-
-/* ── The whole thing ────────────────────────────────────────────────── */
+export const IMAGE_LIMITS = {
+  avatar: { maxSide: 256, quality: 0.82, maxBytes: 120_000 },
+  background: { maxSide: 1600, quality: 0.78, maxBytes: 500_000 },
+} as const;
 
 export type Preferences = {
   currency: string;
@@ -213,28 +244,45 @@ export type Preferences = {
   hideCents: boolean;
   theme: Theme;
   accent: string;
-  avatarColor: string;
-  /** null means "use the initial of your name". */
-  avatarEmoji: string | null;
+  /** A downscaled data URL, or null to fall back to the emoji or initial. */
+  avatarImage: string | null;
+  /** A downscaled data URL painted behind the dashboard, or null for none. */
+  backgroundImage: string | null;
   displayName: string;
   gender: Gender;
   genderDescription: string;
   pronouns: string;
+  /**
+   * Category ids the user has starred, newest first.
+   *
+   * Kept as an explicit ordered list rather than a flag per category because
+   * the picker needs to render them in a stable order, and the order someone
+   * starred things in is the only one that doesn't reshuffle under them.
+   */
+  favouriteCategories: string[];
 };
 
 export const DEFAULT_PREFERENCES: Preferences = {
-  currency: "USD",
-  locale: "en-US",
+  currency: "AUD",
+  locale: "en-AU",
   hideCents: false,
   theme: "system",
   accent: "emerald",
-  avatarColor: AVATAR_COLORS[0],
-  avatarEmoji: null,
+  avatarImage: null,
+  backgroundImage: null,
   displayName: "",
   gender: "unspecified",
   genderDescription: "",
   pronouns: "",
+  favouriteCategories: [],
 };
+
+/** A stored picture, or null for anything that isn't one we wrote. */
+function dataUrl(value: unknown): string | null {
+  return typeof value === "string" && value.startsWith("data:image/")
+    ? value
+    : null;
+}
 
 function text(value: unknown, max: number): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -258,9 +306,11 @@ function oneOf<T extends string>(
 export function toPreferences(data: Record<string, unknown> | undefined): Preferences {
   if (!data) return DEFAULT_PREFERENCES;
 
+  // Only for someone who has never chosen: once it is stored, it is theirs.
+  const guessed = guessCurrency();
   const currency = CURRENCY_BY_CODE.has(data.currency as string)
     ? (data.currency as string)
-    : DEFAULT_PREFERENCES.currency;
+    : guessed.code;
 
   return {
     currency,
@@ -268,23 +318,28 @@ export function toPreferences(data: Record<string, unknown> | undefined): Prefer
     locale:
       typeof data.locale === "string" && data.locale !== ""
         ? data.locale
-        : currencyOption(currency).locale,
+        : currency === guessed.code
+          ? guessed.locale
+          : currencyOption(currency).locale,
     hideCents: data.hideCents === true,
     theme: oneOf(data.theme, THEMES, DEFAULT_PREFERENCES.theme),
     accent: ACCENT_BY_ID.has(data.accent as string)
       ? (data.accent as string)
       : DEFAULT_PREFERENCES.accent,
-    avatarColor: AVATAR_COLORS.includes(data.avatarColor as (typeof AVATAR_COLORS)[number])
-      ? (data.avatarColor as string)
-      : DEFAULT_PREFERENCES.avatarColor,
-    avatarEmoji:
-      typeof data.avatarEmoji === "string" && data.avatarEmoji !== ""
-        ? data.avatarEmoji
-        : null,
+    // Only a data URL is honoured: anything else in this field would be a
+    // remote address this app never wrote, and rendering one would leak the
+    // viewer's IP to whoever put it there.
+    avatarImage: dataUrl(data.avatarImage),
+    backgroundImage: dataUrl(data.backgroundImage),
     displayName: text(data.displayName, MAX_DISPLAY_NAME),
     gender: oneOf(data.gender, GENDERS, DEFAULT_PREFERENCES.gender),
     genderDescription: text(data.genderDescription, MAX_GENDER_TEXT),
     pronouns: text(data.pronouns, MAX_PRONOUNS),
+    favouriteCategories: Array.isArray(data.favouriteCategories)
+      ? data.favouriteCategories.filter(
+          (id): id is string => typeof id === "string" && id !== "",
+        )
+      : [],
   };
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { formatMoney, formatPercent } from "@/lib/budget/format";
 import { seriesColor, type Account } from "@/lib/budget/types";
 
@@ -9,9 +9,24 @@ const STROKE = 22;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 /** Surface-coloured gap between adjacent segments, in user units (~2px). */
 const GAP = 3;
+/** How long one full turn takes; each segment gets its share of it. */
+const SWEEP_MS = 900;
 
 export function AllocationChart({ accounts }: { accounts: Account[] }) {
   const [active, setActive] = useState<string | null>(null);
+
+  // Drawn at zero on the first frame and grown on the next, so the ring has
+  // something to animate between. Each segment waits until the ones before it
+  // have finished, which is what turns four independent grows into one hand
+  // sweeping clockwise from twelve o'clock.
+  //
+  // Reduced motion needs no branch here: the transition itself is switched off
+  // in CSS, so the same state change lands the ring fully drawn on that frame.
+  const [swept, setSwept] = useState(false);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setSwept(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   // A pie can't express a negative share, so an overdrawn account contributes
   // nothing to the distribution. Its real balance is still shown in the legend.
@@ -91,6 +106,11 @@ export function AllocationChart({ accounts }: { accounts: Account[] }) {
           <g transform="rotate(-90 100 100)">
             {segments.map((segment) => {
               const dimmed = active !== null && active !== segment.id;
+              // Where this segment starts, as a fraction of the whole ring —
+              // which is also how long it waits before drawing itself.
+              const startsAt = -segment.offset / CIRCUMFERENCE;
+              const drawn = swept ? segment.length : 0;
+
               return (
                 <circle
                   key={segment.id}
@@ -100,12 +120,14 @@ export function AllocationChart({ accounts }: { accounts: Account[] }) {
                   fill="none"
                   stroke={segment.color}
                   strokeWidth={active === segment.id ? STROKE + 4 : STROKE}
-                  strokeDasharray={`${segment.length} ${
-                    CIRCUMFERENCE - segment.length
-                  }`}
+                  strokeDasharray={`${drawn} ${CIRCUMFERENCE - drawn}`}
                   strokeDashoffset={segment.offset}
                   opacity={dimmed ? 0.35 : 1}
-                  className="cursor-pointer transition-[opacity,stroke-width] duration-150"
+                  style={{
+                    transitionDuration: `${segment.fraction * SWEEP_MS}ms, 150ms, 150ms`,
+                    transitionDelay: `${startsAt * SWEEP_MS}ms, 0ms, 0ms`,
+                  }}
+                  className="cursor-pointer transition-[stroke-dasharray,opacity,stroke-width] ease-linear motion-reduce:transition-none"
                   onMouseEnter={() => setActive(segment.id)}
                   onMouseLeave={() => setActive(null)}
                 >

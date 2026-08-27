@@ -345,6 +345,7 @@ const SCOPE_ICON: Record<Exclude<GoalScope, "expense">, IconName> = {
   income: "banknote",
   savings: "vault",
   investments: "trendUp",
+  debt: "debt",
 };
 
 export function goalLabel(goal: Goal): string {
@@ -368,6 +369,9 @@ function actualFor(
       return summariseMonth(transactions).incomeCents;
     case "savings":
     case "investments":
+    // A transfer *into* a debt account is a repayment — the same arithmetic as
+    // funding a savings pot, which is why it needs no special case.
+    case "debt":
       return contributionTo(transactions, idsOfType(accounts, goal.scope));
     case "expense":
       return goal.categoryId
@@ -515,73 +519,9 @@ export function rollUpGoals(progress: GoalProgress[]): GoalRollup {
 
 /* ── Plain-language summaries ───────────────────────────────────────── */
 
-function shareInWords(share: number): string {
-  if (share >= 0.85) return "nearly all";
-  if (share >= 0.6) return "most";
-  if (share >= 0.45) return "about half";
-  if (share >= 0.3) return "about a third";
-  if (share >= 0.2) return "about a quarter";
-  if (share >= 0.12) return "roughly a sixth";
-  return "a small slice";
-}
 
-export type Verdict = {
-  headline: string;
-  detail: string;
-  tone: GoalStatus | "neutral";
-  icon: IconName;
-};
 
-/** The one sentence the dashboard leads with. */
-export function monthVerdict(
-  transactions: Transaction[],
-  monthLabel: string,
-): Verdict {
-  const { incomeCents, expenseCents, netCents } = summariseMonth(transactions);
 
-  if (incomeCents === 0 && expenseCents === 0) {
-    return {
-      headline: `Nothing recorded in ${monthLabel} yet`,
-      detail: "Add an income or an expense and this fills in.",
-      tone: "neutral",
-      icon: "sparkle",
-    };
-  }
-
-  if (netCents > 0) {
-    return {
-      headline: "You're keeping more than you spend",
-      detail: `${formatMoney(netCents)} more came in than went out.`,
-      tone: "good",
-      icon: "check",
-    };
-  }
-
-  if (netCents < 0) {
-    return {
-      headline: "You're spending more than you earn",
-      detail: `${formatMoney(-netCents)} more went out than came in.`,
-      tone: "bad",
-      icon: "alert",
-    };
-  }
-
-  return {
-    headline: "You broke exactly even",
-    detail: "Everything that came in went back out.",
-    tone: "watch",
-    icon: "swap",
-  };
-}
-
-/** The sentence above the category breakdown. */
-export function spendingHeadline(rows: CategorySpend[]): string {
-  if (rows.length === 0) return "No expenses recorded this month.";
-  if (rows.length === 1) {
-    return `Everything you spent went on ${rows[0].label.toLowerCase()}.`;
-  }
-  return `${rows[0].label} took ${shareInWords(rows[0].share)} of your spending, ahead of ${rows[1].label.toLowerCase()}.`;
-}
 
 /* ── Allocation: everything is budgeted out of income ───────────────── */
 
@@ -615,11 +555,17 @@ export function allocationOf(goals: GoalMap): Allocation {
 /** The scopes money is allocated *to* — income is what it comes out of. */
 export type SpendScope = Exclude<GoalScope, "income">;
 
-export const SPEND_SCOPES: SpendScope[] = ["savings", "investments", "expense"];
+export const SPEND_SCOPES: SpendScope[] = [
+  "savings",
+  "investments",
+  "debt",
+  "expense",
+];
 
 export const SCOPE_LABELS: Record<SpendScope, string> = {
   savings: "Saving",
   investments: "Investing",
+  debt: "Paying off debt",
   expense: "Spending limits",
 };
 
@@ -630,6 +576,7 @@ export const SCOPE_LABELS: Record<SpendScope, string> = {
 export const SCOPE_COLORS: Record<SpendScope, string> = {
   savings: "var(--scope-savings)",
   investments: "var(--scope-investments)",
+  debt: "var(--scope-debt)",
   expense: "var(--scope-expense)",
 };
 

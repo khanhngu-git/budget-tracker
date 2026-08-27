@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Select, TextInput } from "@/components/ui/field";
+import { Field, TextInput } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
 import { Icon } from "@/components/ui/icon";
 import { AccountSelect, spendableAccounts } from "@/components/dashboard/account-select";
 import { CategoryPicker } from "@/components/dashboard/category-picker";
@@ -24,6 +25,7 @@ import {
 } from "@/lib/budget/recurring";
 import { BudgetError } from "@/lib/budget/error";
 import {
+  ACCOUNT_TYPE_ICONS,
   type Account,
   type RecurringKind,
   type RecurringRule,
@@ -240,30 +242,28 @@ export function RecurringDialog({
               <Select
                 id="recurring-from"
                 value={from}
-                onChange={(event) => changeFrom(event.target.value)}
+                options={accounts.map((option) => ({
+                  value: option.id,
+                  label: option.name,
+                  icon: ACCOUNT_TYPE_ICONS[option.type],
+                }))}
+                onChange={changeFrom}
                 disabled={pending}
-              >
-                {accounts.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </Select>
+              />
             </Field>
 
             <Field label="To" htmlFor="recurring-to">
               <Select
                 id="recurring-to"
                 value={to}
-                onChange={(event) => changeTo(event.target.value)}
+                options={accounts.map((option) => ({
+                  value: option.id,
+                  label: option.name,
+                  icon: ACCOUNT_TYPE_ICONS[option.type],
+                }))}
+                onChange={changeTo}
                 disabled={pending}
-              >
-                {accounts.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </Select>
+              />
             </Field>
           </>
         )}
@@ -272,17 +272,13 @@ export function RecurringDialog({
           <Select
             id="recurring-frequency"
             value={frequency}
-            onChange={(event) =>
-              setFrequency(event.target.value as Frequency)
-            }
+            options={FREQUENCIES.map((option) => ({
+              value: option,
+              label: FREQUENCY_LABELS[option],
+            }))}
+            onChange={(next) => setFrequency(next as Frequency)}
             disabled={pending}
-          >
-            {FREQUENCIES.map((option) => (
-              <option key={option} value={option}>
-                {FREQUENCY_LABELS[option]}
-              </option>
-            ))}
-          </Select>
+          />
         </Field>
 
         <Field

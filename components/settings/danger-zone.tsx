@@ -31,7 +31,9 @@ const COPY: Record<
     losses: [
       "Every account and its balance",
       "Every transaction, in every month",
+      "Every recurring entry",
       "Every budget goal, in every month",
+      "Your profile picture, background and starred categories",
     ],
   },
   delete: {
@@ -41,7 +43,7 @@ const COPY: Record<
     blurb:
       "Everything above, plus your profile and your sign-in itself. You will be signed out and this email will no longer have an account.",
     losses: [
-      "Every account, transaction and budget goal",
+      "Every account, transaction, recurring entry and budget goal",
       "Your name, picture and settings",
       "Your sign-in — this email will no longer have an account",
     ],
@@ -158,30 +160,19 @@ export function DangerZone() {
   return (
     <>
       <div className="flex flex-col gap-4 rounded-2xl border border-negative/40 bg-surface p-6">
-        <div className="flex items-start gap-3">
-          <span aria-hidden className="mt-0.5 text-negative">
+        <div className="flex items-center gap-3">
+          <span aria-hidden className="shrink-0 text-negative">
             <Icon name="alert" className="h-5 w-5" />
           </span>
-          <div className="flex flex-col gap-1">
-            <h3 className="text-[0.9375rem] font-semibold tracking-tight text-foreground">
-              There is no undo for either of these
-            </h3>
-            <p className="text-sm text-muted">
-              Nothing here is recoverable and nothing is backed up. Both ask you
-              to confirm twice before anything happens.
-            </p>
-          </div>
+          <h3 className="text-[0.9375rem] font-semibold tracking-tight text-foreground">
+            There is no undo for either of these
+          </h3>
         </div>
 
         <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">
-              Reset my data
-            </p>
-            <p className="text-sm text-muted">
-              Delete every account, transaction and plan. Keep the sign-in.
-            </p>
-          </div>
+          <p className="min-w-0 text-sm font-medium text-foreground">
+            Reset my data
+          </p>
           <Button
             variant="outline"
             onClick={() => open("reset")}
@@ -193,14 +184,9 @@ export function DangerZone() {
         </div>
 
         <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">
-              Delete my account
-            </p>
-            <p className="text-sm text-muted">
-              Everything above, plus your profile and your sign-in.
-            </p>
-          </div>
+          <p className="min-w-0 text-sm font-medium text-foreground">
+            Delete my account
+          </p>
           <button
             type="button"
             onClick={() => open("delete")}
@@ -300,7 +286,7 @@ export function DangerZone() {
                 onClick={close}
                 disabled={pending}
               >
-                Keep everything
+                Cancel
               </Button>
               <button
                 type="button"

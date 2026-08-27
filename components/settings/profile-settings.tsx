@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { updateProfile } from "firebase/auth";
-import { Avatar } from "@/components/settings/avatar";
-import { AvatarDialog } from "@/components/settings/avatar-dialog";
+import { AvatarPicker } from "@/components/settings/avatar-picker";
 import { Button } from "@/components/ui/button";
-import { Field, Select, TextInput } from "@/components/ui/field";
+import { Field, TextInput } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useSettings } from "@/lib/settings/settings-context";
 import {
@@ -31,7 +31,6 @@ export function ProfileSettings() {
 
   const [draft, setDraft] = useState<Preferences>(preferences);
   const [pending, setPending] = useState(false);
-  const [choosingPicture, setChoosingPicture] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -46,8 +45,7 @@ export function ProfileSettings() {
     draft.gender !== preferences.gender ||
     draft.genderDescription !== preferences.genderDescription ||
     draft.pronouns !== preferences.pronouns ||
-    draft.avatarColor !== preferences.avatarColor ||
-    draft.avatarEmoji !== preferences.avatarEmoji;
+    draft.avatarImage !== preferences.avatarImage;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -65,8 +63,7 @@ export function ProfileSettings() {
             ? draft.genderDescription.trim().slice(0, MAX_GENDER_TEXT)
             : "",
         pronouns: draft.pronouns.trim().slice(0, MAX_PRONOUNS),
-        avatarColor: draft.avatarColor,
-        avatarEmoji: draft.avatarEmoji,
+        avatarImage: draft.avatarImage,
       });
 
       // Firebase Auth keeps its own copy, and it's the one that survives into
@@ -88,21 +85,12 @@ export function ProfileSettings() {
       className="flex flex-col gap-5 rounded-2xl border border-border bg-surface p-6"
     >
       <div className="flex items-center gap-4">
-        <Avatar preferences={draft} fallback={user?.email ?? ""} size="lg" />
-        <div className="flex min-w-0 flex-col items-start gap-1.5">
+        <AvatarPicker preferences={draft} onChange={edit} disabled={pending} />
+        <div className="flex min-w-0 flex-col items-start gap-1">
           <p className="truncate text-[0.9375rem] font-medium text-foreground">
             {draft.displayName.trim() || "No name set"}
           </p>
           <p className="truncate text-sm text-muted">{user?.email}</p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setChoosingPicture(true)}
-            disabled={pending}
-          >
-            Change picture
-          </Button>
         </div>
       </div>
 
@@ -136,15 +124,13 @@ export function ProfileSettings() {
         <Select
           id="gender"
           value={draft.gender}
-          onChange={(event) => edit({ gender: event.target.value as Gender })}
+          options={GENDERS.map((gender) => ({
+            value: gender,
+            label: GENDER_LABELS[gender],
+          }))}
+          onChange={(gender) => edit({ gender: gender as Gender })}
           disabled={pending}
-        >
-          {GENDERS.map((gender) => (
-            <option key={gender} value={gender}>
-              {GENDER_LABELS[gender]}
-            </option>
-          ))}
-        </Select>
+        />
       </Field>
 
       {draft.gender === "self-described" ? (
@@ -166,16 +152,6 @@ export function ProfileSettings() {
         >
           {error}
         </p>
-      ) : null}
-
-      {choosingPicture ? (
-        <AvatarDialog
-          preferences={draft}
-          fallback={user?.email ?? ""}
-          onChange={edit}
-          open
-          onClose={() => setChoosingPicture(false)}
-        />
       ) : null}
 
       <div className="flex items-center justify-end gap-3">

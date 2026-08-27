@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Field, Select } from "@/components/ui/field";
+import { Field } from "@/components/ui/field";
+import { ImagePicker } from "@/components/settings/image-picker";
+import { Select } from "@/components/ui/select";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { formatMoney } from "@/lib/budget/format";
 import {
   ACCENTS,
   CURRENCIES,
+  IMAGE_LIMITS,
   THEMES,
   THEME_LABELS,
   currencyOption,
@@ -107,19 +110,44 @@ export function AppearanceSettings() {
         <Select
           id="currency"
           value={preferences.currency}
-          onChange={(event) => {
-            const next = currencyOption(event.target.value);
+          options={CURRENCIES.map((currency) => ({
+            value: currency.code,
+            label: `${currency.label} (${currency.code})`,
+          }))}
+          onChange={(code) => {
+            const next = currencyOption(code);
             // The locale travels with the currency: euros grouped the American
             // way would be nobody's idea of euros.
             apply({ currency: next.code, locale: next.locale });
           }}
-        >
-          {CURRENCIES.map((currency) => (
-            <option key={currency.code} value={currency.code}>
-              {currency.label} ({currency.code})
-            </option>
-          ))}
-        </Select>
+        />
+      </Field>
+
+      <Field
+        label="Background"
+        htmlFor="background-image"
+        hint="Sits behind the dashboard, dimmed so the figures on top stay readable."
+      >
+        <div className="flex flex-col gap-3">
+          {preferences.backgroundImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={preferences.backgroundImage}
+              alt="Your dashboard background"
+              className="h-28 w-full rounded-xl border border-border object-cover"
+            />
+          ) : (
+            <div className="flex h-28 w-full items-center justify-center rounded-xl border border-dashed border-border bg-surface-muted text-muted">
+              <Icon name="image" className="h-6 w-6" />
+            </div>
+          )}
+          <ImagePicker
+            label="Dashboard background"
+            value={preferences.backgroundImage}
+            budget={IMAGE_LIMITS.background}
+            onChange={(backgroundImage) => apply({ backgroundImage })}
+          />
+        </div>
       </Field>
 
       <label className="flex cursor-pointer items-start gap-3">

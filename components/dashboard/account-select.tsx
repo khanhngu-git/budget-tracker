@@ -1,7 +1,11 @@
 "use client";
 
-import { Select } from "@/components/ui/field";
-import { canSpendFrom, type Account } from "@/lib/budget/types";
+import { Select } from "@/components/ui/select";
+import {
+  ACCOUNT_TYPE_ICONS,
+  canSpendFrom,
+  type Account,
+} from "@/lib/budget/types";
 
 /**
  * The accounts an entry is most likely to land on, first.
@@ -45,29 +49,24 @@ export function AccountSelect({
 }) {
   const everyday = accounts.filter((account) => canSpendFrom(account.type));
   const rest = accounts.filter((account) => !canSpendFrom(account.type));
-  const options = (list: Account[]) =>
-    list.map((option) => (
-      <option key={option.id} value={option.id}>
-        {option.name}
-      </option>
-    ));
+
+  // Ordered before mapping, because the list draws each group's heading where
+  // that group's first option falls.
+  const options = [...everyday, ...rest].map((account) => ({
+    value: account.id,
+    label: account.name,
+    icon: ACCOUNT_TYPE_ICONS[account.type],
+    // A lone heading tells the reader nothing, and the Select drops it.
+    group: canSpendFrom(account.type) ? "Everyday" : "Other accounts",
+  }));
 
   return (
     <Select
       id={id}
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      options={options}
+      onChange={onChange}
       disabled={disabled}
-    >
-      {/* Groups only earn their labels when there are two of them. */}
-      {everyday.length > 0 && rest.length > 0 ? (
-        <>
-          <optgroup label="Everyday">{options(everyday)}</optgroup>
-          <optgroup label="Other accounts">{options(rest)}</optgroup>
-        </>
-      ) : (
-        options(accounts)
-      )}
-    </Select>
+    />
   );
 }
