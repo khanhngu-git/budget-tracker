@@ -1,230 +1,118 @@
 # Budget Tracker
 
-A personal budgeting app built on Next.js and Firebase. It answers three
-questions, in this order: **how much have I got**, **where did it go**, and
-**am I on track for the month I'm looking at**.
+A personal budgeting app built with Next.js, Firebase Authentication, and
+Cloud Firestore. Track accounts, transactions, recurring entries, monthly
+budgets, goals, and historical balance changes for one signed-in user.
 
-Everything is scoped to one signed-in user. There is no server of ours in the
-middle — the browser talks to Firestore directly, and the security rules in
-`firestore.rules` are the real access control.
+## Features
 
----
-
-## What it does
-
-**Accounts.** Add one for every place you keep money — a current account, a
-coin jar, a pension — and one for everywhere you owe it. Debt accounts (a card,
-a loan, a mortgage) hold a negative balance, so they net off your total
-automatically, and every direction word flips: money moving *into* one is a
-repayment, and a balance going up means the debt went down.
-
-**A ledger that always balances.** Income, expenses, transfers and balance
-adjustments are recorded as entries, and each one moves the accounts it touches
-in the same atomic write. Amounts are stored as integer cents and are never
-signed — the *kind* of entry carries the direction. Correcting an entry re-reads
-what it originally did and re-settles the difference, so fixing a typo fixes the
-history and the money together.
-
-**Months are real boundaries.** A past month's closing balance is derived by
-rewinding today's running total through everything recorded since, so looking at
-July shows July — and nothing you record now can quietly rewrite it.
-
-**A plan per month.** Set what you mean to earn, what you'll move into savings
-and investments, and a ceiling per spending category. Income is the ceiling
-everything else is drawn from: the app refuses to let you promise more than you
-expect to earn, and the allocation bar shows the month's income target split
-into the parts it's been promised to — green for saving, violet for investing,
-orange for spending limits — with the tail nobody has claimed yet.
-
-**Recurring entries.** Salary, rent, subscriptions — set **Repeat** on an
-ordinary entry and pick a frequency (weekly, fortnightly, monthly or yearly)
-and either an end date or *until further notice*. The entry in front of you is
-the first occurrence; the schedule takes over from the next one. Everything
-currently repeating is listed behind **Recurring** on the Transactions page,
-where each one can be edited, paused or deleted. There is no server, so occurrences are posted the
-next time the app is opened on or after the day they fell due, dated the day
-they were due rather than the day they were noticed. Each rule advances its own
-`lastRunDate` inside the same transaction that writes its entries, so a second
-tab or a reload can't double-post the rent. Rules can be paused, and deleting
-one leaves the entries it has already posted alone.
-
-**Categories you pick by looking.** Around forty categories across nine groups,
-chosen from a searchable grid of icons rather than a dropdown.
-
-**Settings.** Currency (and the number formatting that goes with it), light /
-dark / system theme, an accent colour, your name, pronouns and avatar, and a
-password reset link — plus the two irreversible ones, behind a confirmation that
-can't be clicked through. Resetting your data drops you back on the Overview
-with the opening-balances prompt already open.
-
----
+- Account balances, transfers, adjustments, debt accounts, and account ordering
+- Income, expense, and future-dated transactions with searchable categories
+- Recurring entries with weekly, fortnightly, monthly, and yearly schedules
+- Monthly budgets with savings, investment, and category allocations
+- Overview, statistics, balance history, expense breakdowns, and month views
+- Profile, avatar, currency, theme, accent, password, and data reset settings
+- Firebase security rules that scope user data to the authenticated owner
 
 ## Getting started
 
-### 1. Requirements
+### Requirements
 
 - Node.js 20 or newer
-- A Firebase project with **Authentication** and **Cloud Firestore** enabled
+- A Firebase project with Email/Password or Google Authentication enabled
+- Cloud Firestore enabled in the same Firebase project
 
-### 2. Install
+### Install
 
 ```bash
 npm install
 ```
 
-### 3. Set up Firebase
+Create `.env.local` in the project root with the Firebase web configuration:
 
-In the [Firebase console](https://console.firebase.google.com):
-
-1. Create a project (or open an existing one).
-2. **Authentication → Sign-in method**: enable **Email/Password** and **Google**.
-3. **Firestore Database**: create a database.
-4. **Project settings → Your apps**: register a Web app and copy its config.
-
-### 4. Environment variables
-
-Create `.env.local` in the project root:
-
-```bash
+```dotenv
 NEXT_PUBLIC_FIREBASE_API_KEY=...
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-project
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
 NEXT_PUBLIC_FIREBASE_APP_ID=...
-NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=...
 ```
 
-These are public by design — a Firebase web config identifies the project, it
-doesn't authorise anything. What actually protects the data is the rules file.
-
-### 5. Deploy the security rules
-
-Without this step Firestore will either refuse every read or allow every one,
-depending on the mode you picked when creating the database. Neither is what
-you want.
+Deploy the Firestore rules after selecting your Firebase project:
 
 ```bash
-npm install -g firebase-tools   # once
+npm install -g firebase-tools
 firebase login
-firebase use --add              # pick your project
+firebase use --add
 firebase deploy --only firestore:rules
 ```
 
-### 6. Run it
+Run the development server:
 
 ```bash
 npm run dev
 ```
 
-Open <http://localhost:3000>, create an account, and follow the verification
-link emailed to you — sign-in refuses an unverified address. On first load the
-app asks which accounts you keep money in and what's in them. Forgotten your
-password? The login page emails a reset link, and so does **Settings → Signing
-in**.
+Open [http://localhost:3000](http://localhost:3000).
 
-### Scripts
+## Scripts
 
-| Command | What it does |
+| Command | Purpose |
 | --- | --- |
-| `npm run dev` | Development server on :3000 |
-| `npm run build` | Production build (type-checks as part of it) |
-| `npm run start` | Serve the production build |
-| `npm run lint` | ESLint |
+| `npm run dev` | Start the development server |
+| `npm run lint` | Run ESLint |
+| `npm run build` | Create a production build |
+| `npm run start` | Start the production server |
 
----
+## Data model
 
-## How it's put together
-
-```
-app/
-  (auth)/            Login and sign-up
-  dashboard/
-    page.tsx         Overview — balances and one line on the plan
-    transactions/    The ledger, filtered and grouped by day
-    budget/          The month's plan and the allocation bar
-    statistics/      Trend, category breakdown, account growth
-    settings/        Profile, appearance, currency, danger zone
-components/
-  budgets/           Goal cards, the goal form, the allocation bar
-  dashboard/         Account cards, charts, dialogs, the shell
-  settings/          Profile, appearance and the danger zone
-  ui/                Button, Dialog, Field, Icon — the whole primitive set
-lib/
-  auth/              Firebase Auth context and error mapping
-  budget/            Types, the ledger, Firestore access, analytics
-  firebase/          Client SDK initialisation
-  settings/          Preferences and the provider that applies them
-firestore.rules      The actual access control
-```
-
-### The pieces worth knowing
-
-**`lib/budget/ledger.ts`** — what one entry does to the balance sheet, with no
-Firestore in sight. Adding applies the deltas, deleting applies their negation,
-editing applies the difference, and past-month views replay them backwards.
-Every balance in the app comes out of this one function.
-
-**`lib/budget/transactions.ts`** — the Firestore side of the same thing. Each
-mutation runs in a transaction that settles the affected accounts and writes the
-entry together, so an entry can never land without its balance change.
-
-**`lib/budget/recurrence.ts`** — when a schedule falls due, with no Firestore
-in sight. Occurrences are measured from the rule's start date rather than
-stepped off the previous one, which is what keeps a rule anchored on the 31st
-landing on the 31st instead of clamping to February's 28th and carrying that
-forward forever. Weekly and fortnightly use day arithmetic, not milliseconds,
-so a daylight-saving change can't shift one onto the wrong date.
-
-**`lib/budget/analytics.ts`** — pure functions over accounts, entries and goals:
-month summaries, goal progress, the category breakdown, the growth series and
-the allocation breakdown. No I/O, so it can be reasoned about on its own.
-
-**`lib/budget/use-budget.ts`** — one subscription window over the ledger (a year
-back through everything after the month on screen) serving the month view, the
-rewind and the growth chart at once.
-
-**`lib/settings/settings-context.tsx`** — applies the two preferences that can't
-travel as props: money formatting, which is called from analytics sentences and
-chart tooltips that have no React context, and the theme, which is an attribute
-on the document element.
-
-### Data model
+All user data lives under the authenticated user's document:
 
 ```
-users/{uid}                                 preferences + the onboarding flag
-users/{uid}/accounts/{accountId}            name, type, balanceCents, order
-users/{uid}/transactions/{transactionId}    kind, accountId, toAccountId,
-                                            amountCents, categoryId, note, date
-users/{uid}/budgets/{YYYY-MM}/goals/{id}    scope, categoryId, amountCents
-users/{uid}/recurring/{ruleId}              kind, accountId, toAccountId,
-                                            categoryId, amountCents, note,
-                                            frequency, startDate, endDate,
-                                            lastRunDate, active
+users/{uid}/accounts/{accountId}
+users/{uid}/transactions/{transactionId}
+users/{uid}/budgets/{YYYY-MM}/goals/{goalId}
+users/{uid}/recurring/{ruleId}
+users/{uid}/preferences
 ```
 
-Money is integer cents everywhere and is only divided by 100 at the point it is
-printed. Amounts are always positive; direction lives in `kind`. Account types
-are `spending`, `cash`, `savings`, `investments` and `debt` — and a `debt`
-account is simply one whose balance is meant to be below zero.
+Money is stored as integer cents. Amounts remain positive and transaction kind
+determines direction. Firestore rules are the access-control boundary; the
+Firebase web configuration is public, but service-account credentials must
+never be committed.
 
----
+## Getting Started
 
-## Conventions
+First, run the development server:
 
-- **Never store money as a float.** Integer cents in, `formatMoney` out.
-- **Never sign an amount.** `kind` carries the direction; `deltasFor` turns the
-  two into balance movements.
-- **Ids are permanent.** Category ids are referenced by every transaction ever
-  recorded and by goal document ids — they can be added to, never renamed.
-- **Colour follows identity, not size.** Accounts take a palette slot by
-  position and keep it; budget scopes keep one colour wherever they appear.
-- **Comments explain why.** The code says what it does; a comment is for the
-  reason it does it that way.
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
 
-## Deploying
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-Any host that runs Next.js will do. On [Vercel](https://vercel.com), import the
-repository and add the same `NEXT_PUBLIC_FIREBASE_*` variables under Project
-Settings → Environment Variables. Add your production domain to **Firebase
-Authentication → Settings → Authorized domains**, or Google sign-in will be
-rejected there.
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+
+## Learn More
+
+To learn more about Next.js, take a look at the following resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
