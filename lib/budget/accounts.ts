@@ -1,6 +1,7 @@
 import {
   addDoc,
   deleteDoc,
+  deleteField,
   getDoc,
   getDocs,
   limit,
@@ -23,19 +24,23 @@ import {
 
 export { accountDoc, accountsPath };
 
-/** One-tap starting points for the add-account form; all of it stays editable. */
+/**
+ * One-tap starting points for the add-account form; all of it stays editable.
+ *
+ * Ordered by how many people have one, not by type — the account almost
+ * everyone opens with is the one that should be under the cursor. Anything
+ * that is really a *named* instance of one of these ("Emergency fund" is a
+ * savings account, "Pension" an investments one) is left out: it would be a
+ * second tile doing nothing the first can't, and the name is editable anyway.
+ */
 export const ACCOUNT_PRESETS: { name: string; type: AccountType }[] = [
+  { name: "Debit Account", type: "spending" },
   { name: "Cash", type: "cash" },
-  { name: "Current account", type: "spending" },
-  { name: "Joint account", type: "spending" },
   { name: "Savings", type: "savings" },
-  { name: "Emergency fund", type: "savings" },
+  { name: "Credit Card", type: "debt" },
   { name: "Investments", type: "investments" },
-  { name: "Pension", type: "investments" },
-  { name: "Credit card", type: "debt" },
   { name: "Loan", type: "debt" },
   { name: "Mortgage", type: "debt" },
-  { name: "Overdraft", type: "debt" },
 ];
 
 export const MAX_ACCOUNT_NAME = 32;
@@ -73,6 +78,12 @@ function toAccount(
     type,
     balanceCents: readBalance(data),
     order: typeof data.order === "number" ? data.order : fallbackOrder,
+    // Absent on every account written before targets existed, and on every
+    // account the user hasn't set one for — both mean the same thing here.
+    targetCents:
+      typeof data.targetCents === "number" && data.targetCents > 0
+        ? data.targetCents
+        : null,
   };
 }
 
@@ -165,6 +176,39 @@ export async function updateAccount(
   if (name === "") throw new BudgetError("Give the account a name.");
 
   await updateDoc(accountDoc(uid, accountId), { name, type: input.type });
+}
+
+/** Renames an account without touching anything else about it. */
+export async function renameAccount(
+  uid: string,
+  accountId: string,
+  rawName: string,
+): Promise<void> {
+  const name = normaliseName(rawName);
+  if (name === "") throw new BudgetError("Give the account a name.");
+
+  await updateDoc(accountDoc(uid, accountId), { name });
+}
+
+/**
+ * Sets or clears what an account is saving up to.
+ *
+ * Written on its own rather than through {@link updateAccount} so that setting
+ * a target can't quietly rewrite the name and type alongside it — the two are
+ * edited from different places and would otherwise race.
+ */
+export async function setAccountTarget(
+  uid: string,
+  accountId: string,
+  targetCents: number | null,
+): Promise<void> {
+  if (targetCents !== null && (!Number.isInteger(targetCents) || targetCents <= 0)) {
+    throw new BudgetError("Enter a target greater than zero.");
+  }
+
+  await updateDoc(accountDoc(uid, accountId), {
+    targetCents: targetCents ?? deleteField(),
+  });
 }
 
 /**

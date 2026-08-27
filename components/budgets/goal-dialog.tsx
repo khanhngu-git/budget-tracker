@@ -15,18 +15,59 @@ import {
 } from "@/lib/budget/format";
 import { setGoal, type GoalMap } from "@/lib/budget/goals";
 import { goalId, type Goal, type GoalScope } from "@/lib/budget/types";
+import { SCOPE_REQUIREMENT } from "@/lib/budget/scopes";
 
-const SCOPE_TABS: { value: GoalScope; label: string; icon: IconName }[] = [
-  { value: "income", label: "Earn", icon: "banknote" },
-  { value: "savings", label: "Save", icon: "vault" },
-  { value: "investments", label: "Invest", icon: "trendUp" },
-  { value: "expense", label: "Limit", icon: "bag" },
+/**
+ * The five kinds of goal, each stated as the sentence it completes.
+ *
+ * A row of four-letter tabs — "Earn / Save / Invest / Limit" — made the reader
+ * guess what each one measured, and at 11px they read as decoration rather
+ * than as the most important choice on the form. Full rows with a line of
+ * explanation cost vertical space and buy the question being answered once.
+ */
+const SCOPE_TABS: {
+  value: GoalScope;
+  label: string;
+  blurb: string;
+  icon: IconName;
+}[] = [
+  {
+    value: "income",
+    label: "Earn",
+    blurb: "What you expect to bring in",
+    icon: "banknote",
+  },
+  {
+    value: "savings",
+    label: "Save",
+    blurb: "Money you move into savings",
+    icon: "vault",
+  },
+  {
+    value: "investments",
+    label: "Invest",
+    blurb: "Money you move into investments",
+    icon: "trendUp",
+  },
+  {
+    value: "debt",
+    label: "Pay off",
+    blurb: "What you clear off a loan or card",
+    icon: "debt",
+  },
+  {
+    value: "expense",
+    label: "Spending limit",
+    blurb: "A ceiling on one category",
+    icon: "bag",
+  },
 ];
 
 const SCOPE_HINT: Record<GoalScope, string> = {
   income: "The least you mean to bring in this month.",
   savings: "How much you mean to move into Savings this month.",
   investments: "How much you mean to move into Investments this month.",
+  debt: "How much you mean to pay off what you owe this month.",
   expense: "The most you want to spend on this category this month.",
 };
 
@@ -42,6 +83,8 @@ export function GoalDialog({
   monthLabel,
   goals,
   goal,
+  initialScope,
+  scopes,
   open,
   onClose,
 }: {
@@ -52,13 +95,24 @@ export function GoalDialog({
   goals: GoalMap;
   /** null when adding. */
   goal: Goal | null;
+  /** Which tab a fresh form opens on, when the caller knows. */
+  initialScope?: GoalScope;
+  /** The kinds of goal this user has the accounts to measure. */
+  scopes: Set<GoalScope>;
   open: boolean;
   onClose: () => void;
 }) {
   const expenseCategories = categoriesFor("expense");
   const editing = goal !== null;
 
-  const [scope, setScope] = useState<GoalScope>(goal?.scope ?? "income");
+  // Never opens on a tab the user can't use — including when the caller asked
+  // for one, since it can't know what accounts exist.
+  const firstUsable =
+    SCOPE_TABS.find((tab) => scopes.has(tab.value))?.value ?? "income";
+  const [scope, setScope] = useState<GoalScope>(
+    goal?.scope ??
+      (initialScope && scopes.has(initialScope) ? initialScope : firstUsable),
+  );
   const [categoryId, setCategoryId] = useState(
     () =>
       goal?.categoryId ??
@@ -120,6 +174,11 @@ export function GoalDialog({
       return;
     }
 
+    if (!scopes.has(scope)) {
+      setError(SCOPE_REQUIREMENT[scope]);
+      return;
+    }
+
     setError(null);
     setPending(true);
     try {
@@ -149,26 +208,55 @@ export function GoalDialog({
           <div
             role="radiogroup"
             aria-label="Goal type"
-            className="grid grid-cols-4 gap-1 rounded-lg border border-border p-1"
+            className="flex flex-col gap-1.5"
           >
-            {SCOPE_TABS.map((tab) => (
-              <button
-                key={tab.value}
-                type="button"
-                role="radio"
-                aria-checked={scope === tab.value}
-                onClick={() => setScope(tab.value)}
-                disabled={pending}
-                className={`inline-flex h-9 flex-col items-center justify-center gap-0.5 rounded-md text-[0.6875rem] font-medium transition-colors ${
-                  scope === tab.value
-                    ? "bg-foreground text-background"
-                    : "text-muted hover:text-foreground"
-                }`}
-              >
-                <Icon name={tab.icon} className="h-4 w-4" />
-                {tab.label}
-              </button>
-            ))}
+            {SCOPE_TABS.map((tab) => {
+              // Shown but unpickable, with the reason in place of the blurb:
+              // hiding it would leave the user wondering where paying-off
+              // went, while this points at the account they'd need to add.
+              const usable = scopes.has(tab.value);
+              const current = scope === tab.value;
+
+              return (
+                <button
+                  key={tab.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={current}
+                  onClick={() => setScope(tab.value)}
+                  disabled={pending || !usable}
+                  className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
+                    current
+                      ? "border-accent bg-accent/10"
+                      : usable
+                        ? "border-border hover:border-muted/50 hover:bg-surface-muted"
+                        : "cursor-not-allowed border-border opacity-50"
+                  }`}
+                >
+                  <span
+                    aria-hidden
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                      current
+                        ? "bg-accent text-accent-foreground"
+                        : "bg-surface-muted text-muted"
+                    }`}
+                  >
+                    <Icon name={tab.icon} className="h-4.5 w-4.5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-foreground">
+                      {tab.label}
+                    </span>
+                    <span className="block truncate text-xs text-muted">
+                      {usable ? tab.blurb : SCOPE_REQUIREMENT[tab.value]}
+                    </span>
+                  </span>
+                  {current ? (
+                    <Icon name="check" className="h-4 w-4 shrink-0 text-accent" />
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
         )}
 

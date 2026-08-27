@@ -22,37 +22,41 @@ import {
   monthKey,
 } from "@/lib/budget/format";
 import { addMonths } from "@/lib/budget/use-budget";
+import { availableScopes } from "@/lib/budget/scopes";
 import type { Goal, GoalScope } from "@/lib/budget/types";
 
-const GROUPS: { title: string; blurb: string; scopes: GoalScope[] }[] = [
-  {
-    title: "Earning",
-    blurb: "What you mean to bring in this month.",
-    scopes: ["income"],
-  },
-  {
-    title: "Building",
-    blurb: "What you move into savings and investments.",
-    scopes: ["savings", "investments"],
-  },
-  {
-    title: "Spending limits",
-    blurb: "Ceilings you'd rather not cross.",
-    scopes: ["expense"],
-  },
+// No blurb per group: "Ceilings you'd rather not cross" under a heading that
+// already reads "Spending limits" is the same sentence twice.
+const GROUPS: { title: string; scopes: GoalScope[] }[] = [
+  { title: "Earning", scopes: ["income"] },
+  { title: "Building", scopes: ["savings", "investments"] },
+  { title: "Paying off", scopes: ["debt"] },
+  { title: "Spending limits", scopes: ["expense"] },
 ];
 
+/**
+ * The month's plan.
+ *
+ * Laid out as one path rather than a grid of equal parts, because a plan is
+ * built in an order: what's coming in, then what's promised out of it. An
+ * empty month says so in one sentence and offers one button; a month with a
+ * plan leads with how much of the income is already spoken for, and only then
+ * lists the goals themselves.
+ */
 export default function BudgetPage() {
   const {
     uid,
     accounts,
+    liveAccounts,
     goals,
     settledTransactions,
     loading,
     goalsLoading,
     monthStart,
   } = useBudgetContext();
-  const [editing, setEditing] = useState<{ goal: Goal | null } | null>(null);
+  const [editing, setEditing] = useState<{ goal: Goal | null; scope?: GoalScope } | null>(
+    null,
+  );
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
@@ -74,6 +78,10 @@ export default function BudgetPage() {
 
   const { incomeTargetCents, allocatedCents, unallocatedCents, groups } =
     allocationBreakdown(goals);
+
+  // A scope you have no account for can't be measured, so it isn't offered.
+  const scopes = availableScopes(liveAccounts);
+  const empty = !busy && rollup.total === 0;
 
   async function handleRemove(id: string) {
     if (!uid) return;
@@ -106,17 +114,100 @@ export default function BudgetPage() {
     }
   }
 
+  // Declared once and rendered from both branches below. Living only in the
+  // "has a plan" return is what made the empty state's button do nothing.
+  const goalDialog =
+    uid && editing ? (
+      <GoalDialog
+        // Remounts per target so the form opens on that goal's own values.
+        key={editing.goal?.id ?? editing.scope ?? "new"}
+        uid={uid}
+        monthKey={key}
+        monthLabel={monthLabel}
+        goals={goals}
+        goal={editing.goal}
+        initialScope={editing.scope}
+        scopes={scopes}
+        open
+        onClose={() => setEditing(null)}
+      />
+    ) : null;
+
+  const errorBanner = error ? (
+    <p
+      role="alert"
+      className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
+    >
+      {error}
+    </p>
+  ) : null;
+
+  /* ── Nothing planned yet ─────────────────────────────────────────── */
+  // The whole page becomes one instruction. Competing with a summary panel and
+  // three empty group headings is what made "New goal" hard to find at all.
+  if (empty) {
+    return (
+      <>
+        {errorBanner}
+
+        <div className="flex flex-col items-center gap-5 rounded-2xl border border-dashed border-border bg-surface px-6 py-14 text-center">
+          <span
+            aria-hidden
+            className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-muted text-muted"
+          >
+            <Icon name="target" className="h-7 w-7" />
+          </span>
+
+          <div className="flex max-w-md flex-col gap-2">
+            <h2 className="text-xl font-semibold tracking-tight text-foreground">
+              No plan for {monthLabel} yet
+            </h2>
+            <p className="text-sm text-muted">
+              Start with what you expect to earn this month. Everything else —
+              what you save, invest, and cap your spending at — is budgeted out
+              of that figure, so it comes first.
+            </p>
+          </div>
+
+          <div className="flex flex-col items-center gap-3 sm:flex-row">
+            <Button
+              size="md"
+              onClick={() => setEditing({ goal: null, scope: "income" })}
+              disabled={!uid}
+            >
+              <Icon name="plus" className="h-4 w-4" />
+              Create your monthly budget
+            </Button>
+
+            {/* Months are independent by design, which would otherwise mean
+                rebuilding the same plan every four weeks. */}
+            <Button
+              variant="outline"
+              size="md"
+              onClick={handleCopy}
+              disabled={!uid || copying}
+            >
+              <Icon name="repeat" className="h-4 w-4" />
+              {copying
+                ? "Copying…"
+                : `Copy ${formatMonthLabel(previousStart)}'s plan`}
+            </Button>
+          </div>
+
+          {notice ? <p className="text-sm text-muted">{notice}</p> : null}
+        </div>
+
+        {goalDialog}
+      </>
+    );
+  }
+
+  /* ── A plan in progress ──────────────────────────────────────────── */
   return (
     <>
       <Section
         title={`Your plan for ${monthLabel}`}
-        subtitle={
-          busy
-            ? "Loading your plan…"
-            : rollup.total === 0
-              ? "Every month has its own plan. Nothing set for this one yet."
-              : rollup.headline
-        }
+        subtitle={busy ? "Loading your plan…" : rollup.headline}
         action={
           <Button
             onClick={() => setEditing({ goal: null })}
@@ -154,33 +245,21 @@ export default function BudgetPage() {
           </div>
 
           {incomeTargetCents === null ? (
-            <>
+            <div className="flex flex-col items-start gap-3">
               <p className="text-sm text-muted">
-                Start with this month&apos;s income target — savings, investing
-                and every spending limit are budgeted out of it, so nothing else
-                can be set until it is.
+                Savings, investing and every spending limit are budgeted out of
+                this month&apos;s income target, so nothing else can be set
+                until it is.
               </p>
-
-              {rollup.total === 0 ? (
-                <div className="flex flex-wrap items-center gap-3">
-                  {/* Months are independent by design, which would otherwise
-                      mean rebuilding the same plan every four weeks. */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCopy}
-                    disabled={!uid || copying}
-                  >
-                    {copying
-                      ? "Copying…"
-                      : `Copy ${formatMonthLabel(previousStart)}'s plan`}
-                  </Button>
-                  {notice ? (
-                    <span className="text-sm text-muted">{notice}</span>
-                  ) : null}
-                </div>
-              ) : null}
-            </>
+              <Button
+                size="sm"
+                onClick={() => setEditing({ goal: null, scope: "income" })}
+                disabled={!uid}
+              >
+                <Icon name="plus" className="h-4 w-4" />
+                Create your monthly budget
+              </Button>
+            </div>
           ) : (
             <>
               <AllocationBar
@@ -204,62 +283,67 @@ export default function BudgetPage() {
         </div>
       </Section>
 
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
-        >
-          {error}
-        </p>
-      ) : null}
+      {errorBanner}
 
       {GROUPS.map((group) => {
+        // A group whose every scope is unavailable is dropped whole — an
+        // "Building" heading over nothing is a question with no answer.
+        const usable = group.scopes.filter((scope) => scopes.has(scope));
+        if (usable.length === 0) return null;
+
         const entries = progress.filter((entry) =>
-          group.scopes.includes(entry.goal.scope),
+          usable.includes(entry.goal.scope),
         );
+        // Adding straight into the group the user is looking at, rather than
+        // making them re-pick the type they just clicked next to.
+        const addScope = usable[0];
 
         return (
-          <Section key={group.title} title={group.title} subtitle={group.blurb}>
-            {entries.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-border bg-surface px-5 py-6 text-sm text-muted">
-                {busy ? "Loading…" : "Nothing set here for this month yet."}
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-3 sm:grid sm:grid-cols-2">
-                {entries.map((entry) => (
-                  <GoalCard
-                    key={entry.goal.id}
-                    entry={entry}
-                    removing={removingId === entry.goal.id}
-                    pending={pendingId === entry.goal.id}
-                    onEdit={() => setEditing({ goal: entry.goal })}
-                    onStartRemove={() => {
-                      setError(null);
-                      setRemovingId(entry.goal.id);
-                    }}
-                    onCancelRemove={() => setRemovingId(null)}
-                    onConfirmRemove={() => handleRemove(entry.goal.id)}
-                  />
-                ))}
-              </ul>
-            )}
+          <Section key={group.title} title={group.title}>
+            <ul className="flex flex-col gap-3 sm:grid sm:grid-cols-2">
+              {entries.map((entry) => (
+                <GoalCard
+                  key={entry.goal.id}
+                  entry={entry}
+                  removing={removingId === entry.goal.id}
+                  pending={pendingId === entry.goal.id}
+                  onEdit={() => setEditing({ goal: entry.goal })}
+                  onStartRemove={() => {
+                    setError(null);
+                    setRemovingId(entry.goal.id);
+                  }}
+                  onCancelRemove={() => setRemovingId(null)}
+                  onConfirmRemove={() => handleRemove(entry.goal.id)}
+                />
+              ))}
+
+              {/* An add tile sitting in the grid, so the way to extend a group
+                  is where the group is — not only in a header button that
+                  scrolls off the top. */}
+              <li>
+                <button
+                  type="button"
+                  onClick={() => setEditing({ goal: null, scope: addScope })}
+                  disabled={!uid || busy}
+                  className="flex h-full min-h-[6.5rem] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-surface px-5 py-6 text-sm font-medium text-muted transition-colors hover:border-foreground/30 hover:bg-surface-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span
+                    aria-hidden
+                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-muted"
+                  >
+                    <Icon name="plus" className="h-4 w-4" />
+                  </span>
+                  {entries.length === 0
+                    ? `Add a ${group.title.toLowerCase()} goal`
+                    : "Add another"}
+                </button>
+              </li>
+            </ul>
           </Section>
         );
       })}
 
-      {uid && editing ? (
-        <GoalDialog
-          // Remounts per target so the form opens on that goal's own values.
-          key={editing.goal?.id ?? "new"}
-          uid={uid}
-          monthKey={key}
-          monthLabel={monthLabel}
-          goals={goals}
-          goal={editing.goal}
-          open
-          onClose={() => setEditing(null)}
-        />
-      ) : null}
+      {goalDialog}
     </>
   );
 }

@@ -5,10 +5,12 @@ import { Dialog } from "@/components/ui/dialog";
 import { TextInput } from "@/components/ui/field";
 import { Icon } from "@/components/ui/icon";
 import {
+  CATEGORIES,
   findCategory,
   groupedCategories,
   type CategoryFlow,
 } from "@/lib/budget/categories";
+import { useSettings } from "@/lib/settings/settings-context";
 
 /**
  * Choosing a category by looking at it.
@@ -39,14 +41,40 @@ export function CategoryPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const { preferences, save } = useSettings();
 
   const selected = findCategory(value);
   const groups = useMemo(() => groupedCategories(flow), [flow]);
 
+  // Starred categories are lifted into their own group at the top rather than
+  // reordered in place, because moving "Groceries" out of Food & drink would
+  // break the muscle memory of everyone who doesn't use favourites.
+  //
+  // Within that group they hold the order the full list uses, not the order
+  // they were starred in: the picker is scanned by position, and a group that
+  // reshuffled every time someone starred something would have to be re-read
+  // from the top on every visit.
+  const favouriteIds = preferences.favouriteCategories;
+  const favourites = useMemo(() => {
+    const starred = new Set(favouriteIds);
+    return CATEGORIES.filter(
+      (category) => category.flow === flow && starred.has(category.id),
+    );
+  }, [favouriteIds, flow]);
+
+  function toggleFavourite(categoryId: string) {
+    const next = favouriteIds.includes(categoryId)
+      ? favouriteIds.filter((id) => id !== categoryId)
+      : [...favouriteIds, categoryId];
+    void save({ favouriteCategories: next });
+  }
+
   const term = query.trim().toLowerCase();
   const matches = useMemo(
     () =>
-      groups
+      (favourites.length > 0
+        ? [{ group: "Favourites" as const, categories: favourites }, ...groups]
+        : groups)
         .map((entry) => ({
           ...entry,
           // The group name matches too, so "home" finds everything filed
@@ -59,7 +87,7 @@ export function CategoryPicker({
           ),
         }))
         .filter((entry) => entry.categories.length > 0),
-    [groups, term],
+    [favourites, groups, term],
   );
 
   function choose(categoryId: string) {
@@ -140,50 +168,79 @@ export function CategoryPicker({
                         const taken =
                           takenIds?.has(category.id) === true && !current;
 
+                        const starred = favouriteIds.includes(category.id);
+
+                        // The star is its own control, so the tile stays a
+                        // single radio rather than a button containing one.
                         return (
-                          <button
-                            key={category.id}
-                            type="button"
-                            role="radio"
-                            aria-checked={current}
-                            disabled={taken}
-                            title={taken ? takenNote : undefined}
-                            onClick={() => choose(category.id)}
-                            className={`flex items-center gap-2.5 rounded-xl border p-2.5 text-left transition-colors ${
+                          <div
+                            key={`${entry.group}-${category.id}`}
+                            className={`relative flex items-center rounded-xl border transition-colors ${
                               current
                                 ? "border-accent bg-accent/10"
                                 : taken
-                                  ? "cursor-not-allowed border-border opacity-45"
+                                  ? "border-border opacity-45"
                                   : "border-border hover:border-muted/50 hover:bg-surface-muted"
                             }`}
                           >
-                            <span
-                              aria-hidden
-                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                                current
-                                  ? "bg-accent text-accent-foreground"
-                                  : "bg-surface-muted text-muted"
+                            <button
+                              type="button"
+                              role="radio"
+                              aria-checked={current}
+                              disabled={taken}
+                              title={taken ? takenNote : undefined}
+                              onClick={() => choose(category.id)}
+                              className="flex min-w-0 flex-1 items-center gap-2.5 p-2.5 text-left disabled:cursor-not-allowed"
+                            >
+                              <span
+                                aria-hidden
+                                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                                  current
+                                    ? "bg-accent text-accent-foreground"
+                                    : "bg-surface-muted text-muted"
+                                }`}
+                              >
+                                <Icon name={category.icon} className="h-4 w-4" />
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-medium text-foreground">
+                                  {category.label}
+                                </span>
+                                {taken ? (
+                                  <span className="block truncate text-xs text-muted">
+                                    {takenNote}
+                                  </span>
+                                ) : null}
+                              </span>
+                              {current ? (
+                                <Icon
+                                  name="check"
+                                  className="h-4 w-4 shrink-0 text-accent"
+                                />
+                              ) : null}
+                            </button>
+
+                            <button
+                              type="button"
+                              aria-pressed={starred}
+                              aria-label={
+                                starred
+                                  ? `Remove ${category.label} from favourites`
+                                  : `Add ${category.label} to favourites`
+                              }
+                              onClick={() => toggleFavourite(category.id)}
+                              className={`mr-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${
+                                starred
+                                  ? "text-warning"
+                                  : "text-muted/40 hover:bg-surface-muted hover:text-muted"
                               }`}
                             >
-                              <Icon name={category.icon} className="h-4 w-4" />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium text-foreground">
-                                {category.label}
-                              </span>
-                              {taken ? (
-                                <span className="block truncate text-xs text-muted">
-                                  {takenNote}
-                                </span>
-                              ) : null}
-                            </span>
-                            {current ? (
                               <Icon
-                                name="check"
-                                className="h-4 w-4 shrink-0 text-accent"
+                                name="star"
+                                className={`h-4 w-4 ${starred ? "fill-current" : ""}`}
                               />
-                            ) : null}
-                          </button>
+                            </button>
+                          </div>
                         );
                       })}
                     </div>
