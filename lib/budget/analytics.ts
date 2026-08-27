@@ -5,7 +5,6 @@ import {
   addDays,
   addMonths,
   addYears,
-  endOfMonth,
   formatDayLong,
   formatDayShort,
   formatMonthLabel,
@@ -208,14 +207,17 @@ function captionFor(start: Date, period: HistoryPeriod): string {
  */
 export function balanceHistory(
   closing: Readonly<Deltas>,
-  monthStart: Date,
+  asOf: Date,
   ledger: Transaction[],
   period: HistoryPeriod,
   count: number,
 ): BalancePoint[] {
-  // `closing` is what the accounts held when the viewed month ended, so that
-  // instant is the only place the rewind can honestly start from.
-  const anchorEnd = endOfMonth(monthStart);
+  // `closing` is what the accounts held at `asOf`, so that instant is the only
+  // place the rewind can honestly start from. It is the end of the viewed
+  // month for a month that has finished, and today for one still running —
+  // anchoring at the month's end regardless would wind entries dated later
+  // this month off a balance that never included them.
+  const anchorEnd = asOf;
 
   const points: BalancePoint[] = [];
   let balances: Deltas = { ...closing };

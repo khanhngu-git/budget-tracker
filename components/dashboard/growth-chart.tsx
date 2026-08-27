@@ -126,7 +126,7 @@ export function GrowthChart({
   accounts,
   closingBalances,
   ledger,
-  monthStart,
+  balancesAsOf,
   period,
   onPeriodChange,
   loading,
@@ -137,7 +137,8 @@ export function GrowthChart({
   closingBalances: Deltas;
   /** The loaded ledger window, deep enough to cover `period`. */
   ledger: Transaction[];
-  monthStart: Date;
+  /** The instant `closingBalances` is stated as at — where the rewind starts. */
+  balancesAsOf: Date;
   period: HistoryPeriod;
   /** Lifted, because the choice decides how much ledger has to be loaded. */
   onPeriodChange: (next: HistoryPeriod) => void;
@@ -152,12 +153,12 @@ export function GrowthChart({
     () =>
       balanceHistory(
         closingBalances,
-        monthStart,
+        balancesAsOf,
         ledger,
         period,
         HISTORY_POINTS[period],
       ),
-    [closingBalances, monthStart, ledger, period],
+    [closingBalances, balancesAsOf, ledger, period],
   );
 
   const series = useMemo(
