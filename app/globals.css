@@ -32,6 +32,7 @@
   --scope-savings: var(--series-3);
   --scope-investments: var(--series-7);
   --scope-expense: var(--series-2);
+  --scope-debt: var(--series-5);
 
   --positive: #047857;
   --warning: #b45309;
@@ -129,6 +130,7 @@
   --color-scope-savings: var(--scope-savings);
   --color-scope-investments: var(--scope-investments);
   --color-scope-expense: var(--scope-expense);
+  --color-scope-debt: var(--scope-debt);
   --color-positive: var(--positive);
   --color-warning: var(--warning);
   --color-negative: var(--negative);
