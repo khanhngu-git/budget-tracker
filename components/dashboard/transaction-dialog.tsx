@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Select, TextInput } from "@/components/ui/field";
+import { Field, TextInput } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
 import { Icon } from "@/components/ui/icon";
 import { AccountSelect, spendableAccounts } from "@/components/dashboard/account-select";
 import { CategoryPicker } from "@/components/dashboard/category-picker";
@@ -28,7 +29,12 @@ import {
   FREQUENCY_LABELS,
   type Frequency,
 } from "@/lib/budget/recurrence";
-import { isDebt, type Account, type Transaction } from "@/lib/budget/types";
+import {
+  ACCOUNT_TYPE_ICONS,
+  isDebt,
+  type Account,
+  type Transaction,
+} from "@/lib/budget/types";
 
 type FormKind = "expense" | "income" | "transfer" | "gain" | "loss";
 
@@ -56,6 +62,7 @@ export function TransactionDialog({
   uid,
   accounts,
   transaction,
+  presetAccountId,
   monthStart,
   onMonthChange,
   open,
@@ -66,6 +73,8 @@ export function TransactionDialog({
   accounts: Account[];
   /** null when adding. */
   transaction: Transaction | null;
+  /** Opens a new entry already pointed at this account. Ignored when editing. */
+  presetAccountId?: string;
   /** The month on screen. Only decides what the date field opens on. */
   monthStart: Date;
   /**
@@ -113,11 +122,12 @@ export function TransactionDialog({
       categoriesFor(transaction?.kind === "income" ? "income" : "expense")[0].id,
   );
   const [account, setAccount] = useState(
-    () => transaction?.accountId ?? spendable[0]?.id ?? "",
+    () => transaction?.accountId ?? presetAccountId ?? spendable[0]?.id ?? "",
   );
   const [from, setFrom] = useState(
     () =>
       (transaction?.kind === "transfer" ? transaction.accountId : null) ??
+      presetAccountId ??
       spendable[0]?.id ??
       "",
   );
@@ -329,30 +339,28 @@ export function TransactionDialog({
               <Select
                 id="from"
                 value={from}
-                onChange={(event) => changeFrom(event.target.value)}
+                options={accounts.map((option) => ({
+                  value: option.id,
+                  label: option.name,
+                  icon: ACCOUNT_TYPE_ICONS[option.type],
+                }))}
+                onChange={changeFrom}
                 disabled={pending}
-              >
-                {accounts.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </Select>
+              />
             </Field>
 
             <Field label="To" htmlFor="to">
               <Select
                 id="to"
                 value={to}
-                onChange={(event) => changeTo(event.target.value)}
+                options={accounts.map((option) => ({
+                  value: option.id,
+                  label: option.name,
+                  icon: ACCOUNT_TYPE_ICONS[option.type],
+                }))}
+                onChange={changeTo}
                 disabled={pending}
-              >
-                {accounts.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </Select>
+              />
             </Field>
           </>
         ) : null}
@@ -379,18 +387,16 @@ export function TransactionDialog({
             <Select
               id="repeat"
               value={repeat}
-              onChange={(event) =>
-                setRepeat(event.target.value as Frequency | "")
-              }
+              options={[
+                { value: "", label: "Doesn't repeat" },
+                ...FREQUENCIES.map((option) => ({
+                  value: option,
+                  label: FREQUENCY_LABELS[option],
+                })),
+              ]}
+              onChange={(next) => setRepeat(next as Frequency | "")}
               disabled={pending}
-            >
-              <option value="">Doesn&apos;t repeat</option>
-              {FREQUENCIES.map((option) => (
-                <option key={option} value={option}>
-                  {FREQUENCY_LABELS[option]}
-                </option>
-              ))}
-            </Select>
+            />
           </Field>
         ) : null}
 

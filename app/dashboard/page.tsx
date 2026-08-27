@@ -6,6 +6,7 @@ import { AccountCards } from "@/components/dashboard/account-cards";
 import { AllocationChart } from "@/components/dashboard/allocation-chart";
 import { AccountsDialog } from "@/components/dashboard/accounts-dialog";
 import { AdjustBalanceDialog } from "@/components/dashboard/adjust-balance-dialog";
+import { TransactionDialog } from "@/components/dashboard/transaction-dialog";
 import { BudgetPulse } from "@/components/dashboard/budget-pulse";
 import { Section } from "@/components/dashboard/section";
 import { Button } from "@/components/ui/button";
@@ -37,9 +38,13 @@ export default function OverviewPage() {
     openingTotalCents,
     goalsLoading,
     monthStart,
+    setMonthStart,
   } = useBudgetContext();
   const [adjusting, setAdjusting] = useState<Account | null>(null);
   const [managing, setManaging] = useState(false);
+  // Quick-add from a card: the same dialog the Transactions page uses, opened
+  // with the account already chosen so the common case is one field of typing.
+  const [addingTo, setAddingTo] = useState<Account | null>(null);
 
   const monthLabel = formatMonthLabel(monthStart);
   const rollup = rollUpGoals(
@@ -61,15 +66,17 @@ export default function OverviewPage() {
             disabled={!uid}
           >
             <Icon name="plus" className="h-4 w-4" />
-            Add or rename
+            Add
           </Button>
         }
       >
         <AccountCards
+          uid={uid}
           accounts={accounts}
           openingAccounts={openingAccounts}
           transactions={transactions}
           onAdjust={setAdjusting}
+          onQuickAdd={setAddingTo}
         />
 
         {/* Directly under the cards, because it answers the question the cards
@@ -80,7 +87,6 @@ export default function OverviewPage() {
       <Section
         divided
         title={`Are you on track for ${monthLabel}?`}
-        subtitle="Your plan, in one line."
       >
         <BudgetPulse rollup={rollup} loading={goalsLoading} />
 
@@ -95,6 +101,20 @@ export default function OverviewPage() {
           for the trend and where the money went.
         </p>
       </Section>
+
+      {uid && addingTo ? (
+        <TransactionDialog
+          key={`quick-${addingTo.id}`}
+          uid={uid}
+          accounts={liveAccounts}
+          transaction={null}
+          presetAccountId={addingTo.id}
+          monthStart={monthStart}
+          onMonthChange={setMonthStart}
+          open
+          onClose={() => setAddingTo(null)}
+        />
+      ) : null}
 
       {uid && adjusting ? (
         <AdjustBalanceDialog

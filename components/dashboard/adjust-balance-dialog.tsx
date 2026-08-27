@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, TextInput } from "@/components/ui/field";
 import {
-  defaultDateFor,
+  startOfDay,
   formatMonthLabel,
   formatMoney,
   formatSignedMoney,
@@ -47,9 +47,15 @@ export function AdjustBalanceDialog({
     (Math.abs(currentCents) / 100).toFixed(2),
   );
   const [note, setNote] = useState("");
-  const [date, setDate] = useState(() =>
-    toDateInputValue(defaultDateFor(monthStart)),
-  );
+  // Today, whichever month is on screen. Restating a balance is something you
+  // do *now* — "this is what the account holds" — so dating it to the last day
+  // of a month the user happens to be reading filed the correction in the past
+  // and left today's balance still wrong.
+  const today = startOfDay(new Date());
+  const [date, setDate] = useState(() => toDateInputValue(today));
+  // Backdating within the month being read stays available; the future does
+  // not, because an adjustment is a statement about money that already moved.
+  const earliest = monthStart < today ? monthStart : today;
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -131,8 +137,8 @@ export function AdjustBalanceDialog({
             id="adjust-date"
             type="date"
             value={date}
-            min={toDateInputValue(monthStart)}
-            max={toDateInputValue(defaultDateFor(monthStart))}
+            min={toDateInputValue(earliest)}
+            max={toDateInputValue(today)}
             onChange={(event) => setDate(event.target.value)}
             disabled={pending}
             required
