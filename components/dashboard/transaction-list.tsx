@@ -10,6 +10,7 @@ import {
   formatMoney,
   formatSignedMoney,
 } from "@/lib/budget/format";
+import { isUpcoming } from "@/lib/budget/ledger";
 import { BudgetError, deleteTransaction } from "@/lib/budget/transactions";
 import {
   isDebt,
@@ -156,16 +157,25 @@ function iconFor(transaction: Transaction): IconName {
 export function TransactionList({
   uid,
   transactions,
+  asOf,
   accounts,
   loading,
   onEdit,
 }: {
   uid: string | null;
   transactions: Transaction[];
+  /**
+   * The instant the month's balances are stated as at. Entries dated at or
+   * after it haven't happened yet: they're shown, but they count towards
+   * nothing. Passed in rather than read from the clock here so a row can't
+   * disagree with the balance and the net it's sitting under.
+   */
+  asOf: Date;
   accounts: AccountLookup;
   loading: boolean;
   onEdit: (transaction: Transaction) => void;
 }) {
+  const asOfTime = asOf.getTime();
   // Deleting moves money, so it takes two deliberate clicks. The confirmation
   // lives in the row rather than a modal: the entry being reversed stays
   // visible while the user decides.
@@ -227,6 +237,13 @@ export function TransactionList({
       ) : null}
 
       {byDay(transactions).map((day) => {
+        // A day is upcoming or it isn't — never half of each. Entries are
+        // dated at local midnight and the cutoff falls on a midnight, so every
+        // entry grouped under one date answers this the same way. That's what
+        // lets the whole day's box carry the treatment instead of each row.
+        const upcoming = day.entries.some((entry) =>
+          isUpcoming(entry, asOfTime),
+        );
         const dayNet = netFor(day.entries);
 
         return (
@@ -237,7 +254,15 @@ export function TransactionList({
               <h3 className="text-sm font-medium text-foreground">
                 {formatDayHeading(day.date)}
               </h3>
-              {dayNet === 0 ? null : (
+              {/* Nothing has been earned or spent on a day still to come, so
+                  it has no net to state. Saying so in words is also what
+                  carries the meaning to a screen reader, which gets nothing
+                  from a dotted border and a fade. */}
+              {upcoming ? (
+                <p className="shrink-0 text-xs font-medium text-muted">
+                  Upcoming
+                </p>
+              ) : dayNet === 0 ? null : (
                 <p
                   className={`shrink-0 text-xs font-medium tabular-nums ${
                     dayNet > 0 ? "text-positive" : "text-negative"
@@ -248,7 +273,16 @@ export function TransactionList({
               )}
             </div>
 
-            <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
+            {/* The dotted border replaces the solid one — the row dividers
+                with it — so money that hasn't moved is drawn provisionally
+                rather than drawn twice. */}
+            <ul
+              className={`divide-y overflow-hidden rounded-2xl border bg-surface ${
+                upcoming
+                  ? "divide-dotted divide-muted/50 border-dotted border-muted/50 opacity-60"
+                  : "divide-border border-border"
+              }`}
+            >
               {day.entries.map((transaction) => {
                 const amount = amountDisplay(transaction);
                 const label = describe(transaction, accounts);

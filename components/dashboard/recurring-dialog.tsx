@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Select, TextInput } from "@/components/ui/field";
 import { Icon } from "@/components/ui/icon";
+import { AccountSelect, spendableAccounts } from "@/components/dashboard/account-select";
 import { CategoryPicker } from "@/components/dashboard/category-picker";
 import { categoriesFor } from "@/lib/budget/categories";
 import {
@@ -23,7 +24,6 @@ import {
 } from "@/lib/budget/recurring";
 import { BudgetError } from "@/lib/budget/error";
 import {
-  canSpendFrom,
   type Account,
   type RecurringKind,
   type RecurringRule,
@@ -56,8 +56,7 @@ export function RecurringDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  const everyday = accounts.filter((account) => canSpendFrom(account.type));
-  const spendable = everyday.length > 0 ? everyday : accounts;
+  const spendable = spendableAccounts(accounts);
 
   const [kind, setKind] = useState<RecurringKind>(rule.kind);
   const [amount, setAmount] = useState(() =>
@@ -220,23 +219,18 @@ export function RecurringDialog({
               />
             </Field>
 
-            {spendable.length > 1 ? (
+            {accounts.length > 1 ? (
               <Field
                 label={kind === "income" ? "Paid into" : "Paid from"}
                 htmlFor="recurring-account"
               >
-                <Select
+                <AccountSelect
                   id="recurring-account"
+                  accounts={accounts}
                   value={account}
-                  onChange={(event) => setAccount(event.target.value)}
+                  onChange={setAccount}
                   disabled={pending}
-                >
-                  {spendable.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name}
-                    </option>
-                  ))}
-                </Select>
+                />
               </Field>
             ) : null}
           </>

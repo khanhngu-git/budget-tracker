@@ -1,4 +1,26 @@
-import type { Transaction, TransactionKind } from "./types";
+import { addDays, startOfDay } from "./format";
+import type { Account, Transaction, TransactionKind } from "./types";
+
+/**
+ * The first instant that hasn't happened yet.
+ *
+ * Entries are dated at local midnight, so one dated today has arrived and one
+ * dated tomorrow has not. Every "has this happened?" question in the app is
+ * answered against this one number, which is also what makes the answers agree
+ * with each other: the same cutoff greys out a row, keeps a bill out of the
+ * month's net, and keeps it out of the balance it will eventually come off.
+ *
+ * It is the same value all day, so it can be recomputed freely without
+ * churning a dependency list, and it moves on its own at midnight.
+ */
+export function notYetTime(now: Date = new Date()): number {
+  return startOfDay(addDays(now, 1)).getTime();
+}
+
+/** Recorded, but not yet money that moved. */
+export function isUpcoming(transaction: Transaction, cutoffTime: number): boolean {
+  return transaction.date.getTime() >= cutoffTime;
+}
 
 /**
  * What one entry does to the balance sheet, with no Firestore in sight.
@@ -108,4 +130,43 @@ export function applyLedger(
 
 export function sumBalances(balances: Readonly<Deltas>): number {
   return Object.values(balances).reduce((sum, cents) => sum + cents, 0);
+}
+
+/** Applies a run of entries to the balance each account carries. */
+export function shiftAccounts(
+  accounts: Account[],
+  transactions: Transaction[],
+  sign: 1 | -1,
+): Account[] {
+  const deltas = applyLedger({}, transactions, sign);
+  return accounts.map((account) => ({
+    ...account,
+    balanceCents: account.balanceCents + (deltas[account.id] ?? 0),
+  }));
+}
+
+/**
+ * What the accounts held at a given instant: the stored figure with every
+ * entry dated at or after `cutoffTime` taken back off.
+ *
+ * One function at three cutoffs answers every balance in the app, which is
+ * what keeps them agreeing with each other. It is also what keeps a
+ * future-dated entry out of the money you actually have: a bill dated next
+ * Tuesday is written down but deducted from nothing, and on Tuesday it starts
+ * counting on its own — the cutoff moves, so there is no job to run and no way
+ * for the deduction to be missed or applied twice.
+ *
+ * Rewinding from the stored total rather than replaying from the beginning of
+ * time is what means the months people actually look at cost the fewest reads.
+ */
+export function balancesAt(
+  stored: Account[],
+  ledger: Transaction[],
+  cutoffTime: number,
+): Account[] {
+  return shiftAccounts(
+    stored,
+    ledger.filter((entry) => entry.date.getTime() >= cutoffTime),
+    -1,
+  );
 }

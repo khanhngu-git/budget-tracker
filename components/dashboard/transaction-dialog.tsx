@@ -5,13 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Select, TextInput } from "@/components/ui/field";
 import { Icon } from "@/components/ui/icon";
+import { AccountSelect, spendableAccounts } from "@/components/dashboard/account-select";
 import { CategoryPicker } from "@/components/dashboard/category-picker";
 import { categoriesFor } from "@/lib/budget/categories";
 import {
   defaultDateFor,
   formatMoney,
   fromDateInputValue,
+  isInMonth,
   parseAmountToCents,
+  startOfMonth,
   toDateInputValue,
 } from "@/lib/budget/format";
 import type { EntryInput } from "@/lib/budget/ledger";
@@ -25,12 +28,7 @@ import {
   FREQUENCY_LABELS,
   type Frequency,
 } from "@/lib/budget/recurrence";
-import {
-  canSpendFrom,
-  isDebt,
-  type Account,
-  type Transaction,
-} from "@/lib/budget/types";
+import { isDebt, type Account, type Transaction } from "@/lib/budget/types";
 
 type FormKind = "expense" | "income" | "transfer" | "gain" | "loss";
 
@@ -59,6 +57,7 @@ export function TransactionDialog({
   accounts,
   transaction,
   monthStart,
+  onMonthChange,
   open,
   onClose,
 }: {
@@ -67,8 +66,14 @@ export function TransactionDialog({
   accounts: Account[];
   /** null when adding. */
   transaction: Transaction | null;
-  /** The month on screen; entries are dated inside it. */
+  /** The month on screen. Only decides what the date field opens on. */
   monthStart: Date;
+  /**
+   * Moves the dashboard to another month. Called when an entry is dated
+   * outside the one on screen, so it can't be saved into a month the user
+   * isn't looking at and appear to have vanished.
+   */
+  onMonthChange: (next: Date) => void;
   open: boolean;
   onClose: () => void;
 }) {
@@ -79,13 +84,10 @@ export function TransactionDialog({
   const isAdjustment =
     transaction?.kind === "gain" || transaction?.kind === "loss";
 
-  // Everyday income and expenses come out of the accounts you actually pay
-  // with — including a card, which is spent from exactly like a current
-  // account. If the user has kept none, every account is offered rather than
-  // blocking the entry: recording what happened matters more than the
-  // tidiness of the model.
-  const everyday = accounts.filter((account) => canSpendFrom(account.type));
-  const spendable = everyday.length > 0 ? everyday : accounts;
+  // Which account an entry defaults to. Every account is selectable — the
+  // picker groups rather than filters — but the one it opens on is the one
+  // people pay with.
+  const spendable = spendableAccounts(accounts);
   const accountOf = (id: string) =>
     accounts.find((account) => account.id === id) ?? null;
   const balanceOf = (id: string) => accountOf(id)?.balanceCents ?? 0;
@@ -212,6 +214,11 @@ export function TransactionDialog({
             : null,
         );
       }
+      // Follow the entry to wherever it landed, so a bill dated next March is
+      // visible the moment it's saved rather than seeming not to have saved.
+      if (!isInMonth(input.date, monthStart)) {
+        onMonthChange(startOfMonth(input.date));
+      }
       onClose();
     } catch (caught) {
       setError(
@@ -292,26 +299,21 @@ export function TransactionDialog({
               />
             </Field>
 
-            {/* Offered only when there's a genuine choice to make — a single
+            {/* Offered whenever there's a genuine choice to make — a single
                 account is an answer, not a question. */}
-            {spendable.length > 1 ? (
+            {accounts.length > 1 ? (
               <Field
                 label={kind === "income" ? "Paid into" : "Paid from"}
                 htmlFor="account"
                 hint={balanceHint(account)}
               >
-                <Select
+                <AccountSelect
                   id="account"
+                  accounts={accounts}
                   value={account}
-                  onChange={(event) => setAccount(event.target.value)}
+                  onChange={setAccount}
                   disabled={pending}
-                >
-                  {spendable.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name}
-                    </option>
-                  ))}
-                </Select>
+                />
               </Field>
             ) : null}
           </>
@@ -360,10 +362,12 @@ export function TransactionDialog({
             id="date"
             type="date"
             value={date}
-            // Bounded to the month on screen, so a new entry can't land in a
-            // month the user isn't looking at and appear to vanish.
-            min={toDateInputValue(monthStart)}
-            max={toDateInputValue(defaultDateFor(monthStart))}
+            // Deliberately unbounded in both directions. A yearly subscription
+            // renews next March, and a bill you already know the date of is
+            // worth recording before it lands — clamping this to the month on
+            // screen made those entries impossible to write without walking
+            // the whole dashboard there first. Nothing vanishes: an entry
+            // dated outside the viewed month takes the view with it, below.
             onChange={(event) => setDate(event.target.value)}
             disabled={pending}
             required

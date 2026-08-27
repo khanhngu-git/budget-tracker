@@ -7,7 +7,13 @@ import { migrateLegacyGoals, subscribeGoals, type GoalMap } from "./goals";
 import { subscribeProfile } from "./profile";
 import { catchUpRecurring, subscribeRecurring } from "./recurring";
 import { addMonths, endOfMonth, monthKey, startOfMonth } from "./format";
-import { applyLedger, sumBalances, type Deltas } from "./ledger";
+import {
+  balancesAt,
+  isUpcoming,
+  notYetTime,
+  sumBalances,
+  type Deltas,
+} from "./ledger";
 import { subscribeTransactionsFrom } from "./transactions";
 import type { HistoryPeriod } from "./analytics";
 import type { Account, RecurringRule, Transaction } from "./types";
@@ -55,19 +61,6 @@ const EMPTY_ACCOUNTS: Account[] = [];
 const EMPTY_TRANSACTIONS: Transaction[] = [];
 const EMPTY_GOALS: GoalMap = Object.freeze({});
 const EMPTY_RECURRING: RecurringRule[] = [];
-
-/** Applies a run of entries to the balance each account carries. */
-function shiftAccounts(
-  accounts: Account[],
-  transactions: Transaction[],
-  sign: 1 | -1,
-): Account[] {
-  const deltas = applyLedger({}, transactions, sign);
-  return accounts.map((account) => ({
-    ...account,
-    balanceCents: account.balanceCents + (deltas[account.id] ?? 0),
-  }));
-}
 
 function balancesOf(accounts: Account[]): Deltas {
   return Object.fromEntries(
@@ -222,7 +215,7 @@ export function useBudget(monthStart: Date, historyPeriod: HistoryPeriod) {
   const recurringReady = uid !== null && recurringState.key === uid;
   const recurring = recurringReady ? recurringState.value : EMPTY_RECURRING;
 
-  const liveAccounts = accountsReady ? accountsState.value : EMPTY_ACCOUNTS;
+  const storedAccounts = accountsReady ? accountsState.value : EMPTY_ACCOUNTS;
   const ledger = ledgerReady ? ledgerState.value : EMPTY_TRANSACTIONS;
   const goals = goalsReady ? goalsState.value : EMPTY_GOALS;
 
@@ -230,6 +223,15 @@ export function useBudget(monthStart: Date, historyPeriod: HistoryPeriod) {
     () => endOfMonth(new Date(monthTime)).getTime(),
     [monthTime],
   );
+
+  // Computed on every render deliberately: it's the same number all day, so
+  // the memos below stay stable through a day's worth of renders and move on
+  // their own the moment the date rolls over.
+  const notYet = notYetTime();
+
+  // A month still running closes at today, not at a date in its future.
+  const closingTime = Math.min(notYet, monthEndTime);
+  const openingTime = Math.min(notYet, monthTime);
 
   const transactions = useMemo(
     () =>
@@ -241,25 +243,46 @@ export function useBudget(monthStart: Date, historyPeriod: HistoryPeriod) {
     [ledger, monthTime, monthEndTime],
   );
 
-  const laterTransactions = useMemo(
-    () => ledger.filter((entry) => entry.date.getTime() >= monthEndTime),
-    [ledger, monthEndTime],
+  /**
+   * The month's entries that have actually happened.
+   *
+   * Every figure the month is judged by — its net, its category totals, its
+   * progress against a goal — is built from these rather than from
+   * `transactions`, so a bill dated for the 30th sits in the list without
+   * moving any of them. On the 30th the cutoff passes it and it joins them,
+   * with nothing to run and nothing to remember.
+   */
+  const settledTransactions = useMemo(
+    () => transactions.filter((entry) => !isUpcoming(entry, closingTime)),
+    [transactions, closingTime],
   );
 
-  // What the accounts were worth when the viewed month closed: the running
-  // total with everything recorded after that month taken back off. Rewinding
-  // from today rather than replaying from the beginning of time means the
-  // months people actually look at — the recent ones — cost the fewest reads.
+  // The money that has actually arrived — what a card in the app should say
+  // you have right now, and what a new entry settles against.
+  const liveAccounts = useMemo(
+    () => balancesAt(storedAccounts, ledger, notYet),
+    [storedAccounts, ledger, notYet],
+  );
+
+  // What the accounts were worth when the viewed month closed.
   const accounts = useMemo(
-    () => shiftAccounts(liveAccounts, laterTransactions, -1),
-    [liveAccounts, laterTransactions],
+    () => balancesAt(storedAccounts, ledger, closingTime),
+    [storedAccounts, ledger, closingTime],
   );
 
   // What rolled in from the month before, before anything in this month.
+  // Derived from the stored total at its own cutoff rather than by winding
+  // the closing balance back over the month: the two cutoffs differ while a
+  // month is still running, and an entry dated later this month must not be
+  // taken off a balance it was never added to.
   const openingAccounts = useMemo(
-    () => shiftAccounts(accounts, transactions, -1),
-    [accounts, transactions],
+    () => balancesAt(storedAccounts, ledger, openingTime),
+    [storedAccounts, ledger, openingTime],
   );
+
+  // Memoised: it feeds the growth chart's dependency list, and a fresh Date
+  // every render would rebuild the whole history on every keystroke.
+  const balancesAsOf = useMemo(() => new Date(closingTime), [closingTime]);
 
   const accountsById = useMemo(
     () => Object.fromEntries(accounts.map((account) => [account.id, account])),
@@ -284,12 +307,20 @@ export function useBudget(monthStart: Date, historyPeriod: HistoryPeriod) {
     accounts,
     /** The same accounts, holding what rolled in from the month before. */
     openingAccounts,
-    /** The running, all-time balances a new entry will actually settle against. */
+    /** What the accounts hold today — future-dated entries not yet counted. */
     liveAccounts,
     accountsById,
     closingBalances,
-    /** Entries dated inside the viewed month. */
+    /**
+     * The instant `closingBalances` is stated as at. The growth chart has to
+     * anchor its rewind here, not at the month's end, or it would take entries
+     * off a balance that never included them.
+     */
+    balancesAsOf,
+    /** Every entry dated inside the viewed month, upcoming ones included. */
     transactions,
+    /** Only those that have happened — what the month's totals are built from. */
+    settledTransactions,
     /** The whole loaded window — at least a year back, for the growth chart. */
     ledger,
     goals,

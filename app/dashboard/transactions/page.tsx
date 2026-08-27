@@ -23,10 +23,13 @@ export default function TransactionsPage() {
     liveAccounts,
     accountsById,
     transactions,
+    settledTransactions,
+    balancesAsOf,
     recurring,
     recurringLoading,
     loading,
     monthStart,
+    setMonthStart,
   } = useBudgetContext();
   // null means the dialog is closed; { transaction: null } means "adding".
   const [dialog, setDialog] = useState<{
@@ -35,7 +38,12 @@ export default function TransactionsPage() {
   const [managing, setManaging] = useState(false);
   const [editingRule, setEditingRule] = useState<RecurringRule | null>(null);
 
-  const { incomeCents, expenseCents, netCents } = summariseMonth(transactions);
+  // Built from what has actually happened. A bill dated for the 30th is in
+  // the list below but not in this line: it hasn't been paid yet, and a net
+  // that already counted it would be answering a different question.
+  const { incomeCents, expenseCents, netCents } =
+    summariseMonth(settledTransactions);
+  const upcomingCount = transactions.length - settledTransactions.length;
   const monthLabel = formatMonthLabel(monthStart);
 
   return (
@@ -68,6 +76,11 @@ export default function TransactionsPage() {
                 {formatSignedMoney(netCents)}
               </span>{" "}
               net
+              {/* Named, not silently omitted: the entry count above includes
+                  them, so the gap between the two needs explaining. */}
+              {upcomingCount > 0 ? (
+                <span className="text-muted"> · {upcomingCount} upcoming</span>
+              ) : null}
             </>
           )
         }
@@ -101,6 +114,7 @@ export default function TransactionsPage() {
         <TransactionList
           uid={uid}
           transactions={transactions}
+          asOf={balancesAsOf}
           accounts={accountsById}
           loading={loading}
           onEdit={(transaction) => setDialog({ transaction })}
@@ -139,6 +153,7 @@ export default function TransactionsPage() {
           accounts={liveAccounts}
           transaction={dialog.transaction}
           monthStart={monthStart}
+          onMonthChange={setMonthStart}
           open
           onClose={() => setDialog(null)}
         />
