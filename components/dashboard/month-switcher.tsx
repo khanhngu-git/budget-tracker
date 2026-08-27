@@ -1,7 +1,7 @@
 "use client";
 
 import { formatMonthLabel } from "@/lib/budget/format";
-import { addMonths, startOfMonth } from "@/lib/budget/use-budget";
+import { addMonths } from "@/lib/budget/use-budget";
 
 export function MonthSwitcher({
   monthStart,
@@ -13,9 +13,6 @@ export function MonthSwitcher({
   /** Off when a heading beside the control already names the month. */
   showLabel?: boolean;
 }) {
-  const thisMonth = startOfMonth(new Date());
-  const isCurrent = monthStart.getTime() === thisMonth.getTime();
-
   const arrow =
     "flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted transition-colors hover:bg-surface-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40";
 
@@ -38,8 +35,9 @@ export function MonthSwitcher({
         type="button"
         className={arrow}
         aria-label="Next month"
-        // Nothing is recorded in the future, so don't offer empty months.
-        disabled={isCurrent}
+        // Uncapped, like the back arrow: future months hold entries now —
+        // bills dated ahead, a yearly subscription that renews in March — and
+        // a user who can write one has to be able to walk to it.
         onClick={() => onChange(addMonths(monthStart, 1))}
       >
         <span aria-hidden>›</span>

@@ -19,7 +19,8 @@ export default function StatisticsPage() {
   const {
     accounts,
     closingBalances,
-    transactions,
+    balancesAsOf,
+    settledTransactions,
     ledger,
     loading,
     monthStart,
@@ -39,7 +40,7 @@ export default function StatisticsPage() {
           accounts={accounts}
           closingBalances={closingBalances}
           ledger={ledger}
-          monthStart={monthStart}
+          balancesAsOf={balancesAsOf}
           period={historyPeriod}
           onPeriodChange={setHistoryPeriod}
           loading={loading}
@@ -51,8 +52,8 @@ export default function StatisticsPage() {
         title={`Inside ${monthLabel}`}
         subtitle="What came in, what went out, and what it went on."
       >
-        <MonthVerdict transactions={transactions} monthLabel={monthLabel} />
-        <ExpenseChart transactions={transactions} loading={loading} />
+        <MonthVerdict transactions={settledTransactions} monthLabel={monthLabel} />
+        <ExpenseChart transactions={settledTransactions} loading={loading} />
       </Section>
     </>
   );

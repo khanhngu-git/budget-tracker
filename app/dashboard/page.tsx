@@ -31,6 +31,7 @@ export default function OverviewPage() {
     openingAccounts,
     liveAccounts,
     transactions,
+    settledTransactions,
     goals,
     totalCents,
     openingTotalCents,
@@ -42,7 +43,7 @@ export default function OverviewPage() {
 
   const monthLabel = formatMonthLabel(monthStart);
   const rollup = rollUpGoals(
-    allGoalProgress(goals, transactions, monthElapsed(monthStart), accounts),
+    allGoalProgress(goals, settledTransactions, monthElapsed(monthStart), accounts),
   );
 
   return (

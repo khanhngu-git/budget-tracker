@@ -47,7 +47,7 @@ export default function BudgetPage() {
     uid,
     accounts,
     goals,
-    transactions,
+    settledTransactions,
     loading,
     goalsLoading,
     monthStart,
@@ -65,7 +65,7 @@ export default function BudgetPage() {
 
   const progress = allGoalProgress(
     goals,
-    transactions,
+    settledTransactions,
     monthElapsed(monthStart),
     accounts,
   );
