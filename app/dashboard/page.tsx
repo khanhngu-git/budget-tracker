@@ -65,8 +65,8 @@ export default function OverviewPage() {
             onClick={() => setManaging(true)}
             disabled={!uid}
           >
-            <Icon name="plus" className="h-4 w-4" />
-            Add
+            <Icon name="pencil" className="h-4 w-4" />
+            Edit
           </Button>
         }
       >

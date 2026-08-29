@@ -109,7 +109,7 @@ export async function backfillAccounts(uid: string): Promise<void> {
   const existing = await getDocs(accountsPath(uid));
   if (existing.empty) return;
 
-  const batch = writeBatch(db);
+  const batch = writeBatch(db());
   let pending = 0;
 
   existing.docs.forEach((snapshot, index) => {
@@ -209,6 +209,31 @@ export async function setAccountTarget(
   await updateDoc(accountDoc(uid, accountId), {
     targetCents: targetCents ?? deleteField(),
   });
+}
+
+/**
+ * Writes a new display order for every account at once.
+ *
+ * The whole list is renumbered from zero rather than one card being given a
+ * fractional position, because `order` is also what breaks the tie for
+ * accounts written before it existed — leaving gaps would let a backfilled
+ * account land in the middle of a list the user had just arranged.
+ *
+ * One batch, so a drag either takes effect completely or not at all: a partial
+ * write would leave two cards claiming the same slot and the list would settle
+ * on whichever name sorted first.
+ */
+export async function reorderAccounts(
+  uid: string,
+  orderedIds: string[],
+): Promise<void> {
+  if (orderedIds.length === 0) return;
+
+  const batch = writeBatch(db());
+  orderedIds.forEach((accountId, index) => {
+    batch.update(accountDoc(uid, accountId), { order: index });
+  });
+  await batch.commit();
 }
 
 /**
