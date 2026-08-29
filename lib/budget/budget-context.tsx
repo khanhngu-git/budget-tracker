@@ -17,6 +17,16 @@ type BudgetContextValue = ReturnType<typeof useBudget> & {
       much of the ledger the subscription below has to load. */
   historyPeriod: HistoryPeriod;
   setHistoryPeriod: (next: HistoryPeriod) => void;
+  /**
+   * Whether the Transactions search looks past the month on screen.
+   *
+   * It lives here rather than on the page because it decides how much of the
+   * ledger the subscription below loads — and staying on once switched on is
+   * the point: finding a receipt from two years ago and then stepping a month
+   * shouldn't quietly re-narrow the search.
+   */
+  searchAllMonths: boolean;
+  setSearchAllMonths: (next: boolean) => void;
 };
 
 const BudgetContext = createContext<BudgetContextValue | null>(null);
@@ -34,7 +44,8 @@ const BudgetContext = createContext<BudgetContextValue | null>(null);
 export function BudgetProvider({ children }: { children: ReactNode }) {
   const [monthStart, setMonthStart] = useState(() => startOfMonth(new Date()));
   const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>("monthly");
-  const budget = useBudget(monthStart, historyPeriod);
+  const [searchAllMonths, setSearchAllMonths] = useState(false);
+  const budget = useBudget(monthStart, historyPeriod, searchAllMonths);
 
   const value = useMemo(
     () => ({
@@ -43,8 +54,10 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
       setMonthStart,
       historyPeriod,
       setHistoryPeriod,
+      searchAllMonths,
+      setSearchAllMonths,
     }),
-    [budget, monthStart, historyPeriod],
+    [budget, monthStart, historyPeriod, searchAllMonths],
   );
 
   return (

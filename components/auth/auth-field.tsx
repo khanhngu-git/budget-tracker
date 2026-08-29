@@ -9,6 +9,8 @@ type AuthFieldProps = {
   placeholder?: string;
   minLength?: number;
   disabled?: boolean;
+  /** Uncontrolled seed — these forms are read with FormData on submit. */
+  defaultValue?: string;
 };
 
 export function AuthField({ id, label, ...inputProps }: AuthFieldProps) {

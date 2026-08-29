@@ -40,30 +40,47 @@ export function ProfileSettings() {
     setDraft((current) => ({ ...current, ...patch }));
   }
 
+  /**
+   * What the draft actually amounts to once saved.
+   *
+   * Stored preferences are trimmed on the way in and on the way out, so a
+   * trailing space is never a real difference — but comparing the raw draft
+   * against them made one look like a difference forever: typing "Khanh " left
+   * the form permanently dirty and the button permanently unfinished, which
+   * read as a field that refused to save. Trimming here is what makes the
+   * space silently not count, in both directions.
+   */
+  const normalised: Preferences = {
+    ...draft,
+    displayName: draft.displayName.trim().slice(0, MAX_DISPLAY_NAME),
+    // The free-text description is only meaningful next to the option that
+    // asks for it; keeping it otherwise would resurrect it later.
+    genderDescription:
+      draft.gender === "self-described"
+        ? draft.genderDescription.trim().slice(0, MAX_GENDER_TEXT)
+        : "",
+    pronouns: draft.pronouns.trim().slice(0, MAX_PRONOUNS),
+  };
+
   const dirty =
-    draft.displayName !== preferences.displayName ||
-    draft.gender !== preferences.gender ||
-    draft.genderDescription !== preferences.genderDescription ||
-    draft.pronouns !== preferences.pronouns ||
-    draft.avatarImage !== preferences.avatarImage;
+    normalised.displayName !== preferences.displayName ||
+    normalised.gender !== preferences.gender ||
+    normalised.genderDescription !== preferences.genderDescription ||
+    normalised.pronouns !== preferences.pronouns ||
+    normalised.avatarImage !== preferences.avatarImage;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
     setError(null);
     try {
-      const displayName = draft.displayName.trim().slice(0, MAX_DISPLAY_NAME);
+      const { displayName } = normalised;
       await save({
         displayName,
-        // The free-text description is only meaningful next to the option that
-        // asks for it; keeping it otherwise would resurrect it later.
-        gender: draft.gender,
-        genderDescription:
-          draft.gender === "self-described"
-            ? draft.genderDescription.trim().slice(0, MAX_GENDER_TEXT)
-            : "",
-        pronouns: draft.pronouns.trim().slice(0, MAX_PRONOUNS),
-        avatarImage: draft.avatarImage,
+        gender: normalised.gender,
+        genderDescription: normalised.genderDescription,
+        pronouns: normalised.pronouns,
+        avatarImage: normalised.avatarImage,
       });
 
       // Firebase Auth keeps its own copy, and it's the one that survives into
@@ -71,6 +88,9 @@ export function ProfileSettings() {
       if (user && displayName && user.displayName !== displayName) {
         await updateProfile(user, { displayName });
       }
+      // Show the user what was actually stored, so the field they typed a
+      // trailing space into stops disagreeing with what the app now knows.
+      setDraft(normalised);
       setSaved(true);
     } catch {
       setError("Couldn't save your profile. Please try again.");

@@ -168,7 +168,7 @@ export async function addTransaction(
   validate(input);
   const entryRef = doc(transactionsPath(uid));
 
-  await runTransaction(db, async (tx) => {
+  await runTransaction(db(), async (tx) => {
     await settleBalances(tx, uid, {}, deltasForInput(input), input);
     tx.set(entryRef, { ...documentFor(input), createdAt: serverTimestamp() });
   });
@@ -231,7 +231,7 @@ export async function updateTransaction(
   validate(input);
   const entryRef = doc(transactionsPath(uid), transactionId);
 
-  await runTransaction(db, async (tx) => {
+  await runTransaction(db(), async (tx) => {
     const entry = await tx.get(entryRef);
     if (!entry.exists()) {
       throw new BudgetError("That entry no longer exists.");
@@ -260,7 +260,7 @@ export async function deleteTransaction(
 ): Promise<void> {
   const entryRef = doc(transactionsPath(uid), transactionId);
 
-  await runTransaction(db, async (tx) => {
+  await runTransaction(db(), async (tx) => {
     const entry = await tx.get(entryRef);
     // Someone else already deleted it (or a second click landed): nothing to
     // undo, and reversing twice would corrupt the balance.
@@ -320,7 +320,7 @@ export async function setAccountBalances(
     }
   }
 
-  await runTransaction(db, async (tx) => {
+  await runTransaction(db(), async (tx) => {
     const refs = entries.map(([accountId]) => accountDoc(uid, accountId));
     const snapshots = await Promise.all(refs.map((ref) => tx.get(ref)));
 
@@ -376,7 +376,7 @@ export async function openAccountsWithBalances(
     }
   }
 
-  const batch = writeBatch(db);
+  const batch = writeBatch(db());
 
   entries.forEach((entry, index) => {
     const ref = doc(accountsPath(uid));

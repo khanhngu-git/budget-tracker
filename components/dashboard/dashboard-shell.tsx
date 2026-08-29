@@ -17,6 +17,7 @@ const TABS = [
   { href: "/dashboard/transactions", label: "Transactions" },
   { href: "/dashboard/budget", label: "Budget" },
   { href: "/dashboard/statistics", label: "Statistics" },
+  { href: "/dashboard/tools", label: "Tools" },
   { href: "/dashboard/settings", label: "Settings" },
 ] as const;
 
@@ -66,7 +67,12 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   }
 
   const pathname = usePathname();
-  const isMonthly = !pathname.startsWith("/dashboard/settings");
+  // Settings isn't a month, and neither are the calculators — they answer
+  // questions about years. A month switcher over either would imply the
+  // answer changes when you page back to July.
+  const isMonthly =
+    !pathname.startsWith("/dashboard/settings") &&
+    !pathname.startsWith("/dashboard/tools");
 
   /* The travelling underline, measured off the tab that is actually current. */
   const tabsRef = useRef<HTMLUListElement>(null);
@@ -119,7 +125,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           <UserMenu />
         </div>
 
-        {/* Five tabs don't fit a phone at any padding that leaves them
+        {/* Six tabs don't fit a phone at any padding that leaves them
             tappable, and a wrapping row pushes the content down by a whole
             line. So the strip scrolls, with fades at the gutters standing in
             for the hidden scrollbar. */}
@@ -175,9 +181,9 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       </header>
 
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
-        {/* Settings is the one page that isn't about a month — nothing on it
-            reads the ledger — so offering to change one there only invites the
-            user to wonder what it did. */}
+        {/* Settings and Tools are the pages that aren't about a month —
+            nothing on either reads the ledger — so offering to change one
+            there only invites the user to wonder what it did. */}
         {isMonthly ? (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">
@@ -191,7 +197,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           </div>
         ) : (
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Settings
+            {pathname.startsWith("/dashboard/tools") ? "Tools" : "Settings"}
           </h1>
         )}
 

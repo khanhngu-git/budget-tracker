@@ -160,6 +160,7 @@ export function TransactionList({
   asOf,
   accounts,
   loading,
+  emptyTitle = "Nothing recorded this month",
   onEdit,
 }: {
   uid: string | null;
@@ -173,6 +174,8 @@ export function TransactionList({
   asOf: Date;
   accounts: AccountLookup;
   loading: boolean;
+  /** What "no rows" means here — the list can be a month or a whole history. */
+  emptyTitle?: string;
   onEdit: (transaction: Transaction) => void;
 }) {
   const asOfTime = asOf.getTime();
@@ -212,9 +215,7 @@ export function TransactionList({
   if (transactions.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-border bg-surface p-8 text-center">
-        <p className="text-sm font-medium text-foreground">
-          Nothing recorded this month
-        </p>
+        <p className="text-sm font-medium text-foreground">{emptyTitle}</p>
         <p className="mt-1 text-sm text-muted">
           Add an entry and the history starts here.
         </p>

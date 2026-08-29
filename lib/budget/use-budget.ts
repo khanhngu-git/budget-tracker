@@ -76,11 +76,28 @@ function balancesOf(accounts: Account[]): Deltas {
  * is derived by comparing keys during render rather than by flipping a loading
  * flag from inside an effect (which would cascade renders on every change).
  */
-export function useBudget(monthStart: Date, historyPeriod: HistoryPeriod) {
+export function useBudget(
+  monthStart: Date,
+  historyPeriod: HistoryPeriod,
+  /**
+   * Widens the ledger subscription to the whole history.
+   *
+   * Off by default because a year is all any chart on the dashboard can plot,
+   * and reading further would cost reads for months nobody scrolls to. It is
+   * turned on by searching across all months, where the whole point is to find
+   * the entry that *isn't* in the window.
+   */
+  allTime = false,
+) {
   const { user } = useAuth();
   const historyMonths = historyMonthsFor(historyPeriod);
   const uid = user?.uid ?? null;
   const monthTime = monthStart.getTime();
+  // All-time is one subscription for the whole session — the month on screen
+  // no longer narrows it, so paging through months must not re-open it.
+  const ledgerKey = allTime
+    ? `${uid}:all`
+    : `${uid}:${monthTime}:${historyMonths}`;
 
   const [accountsState, setAccountsState] = useState<{
     key: string;
@@ -136,16 +153,19 @@ export function useBudget(monthStart: Date, historyPeriod: HistoryPeriod) {
   // this twice and could disagree with each other mid-update.
   useEffect(() => {
     if (!uid) return;
-    const key = `${uid}:${monthTime}:${historyMonths}`;
-    const from = addMonths(new Date(monthTime), -(historyMonths - 1));
+    // Epoch rather than a separate unbounded query: the `where` clause stays,
+    // so there is one code path and one index for both windows.
+    const from = allTime
+      ? new Date(0)
+      : addMonths(new Date(monthTime), -(historyMonths - 1));
 
     return subscribeTransactionsFrom(
       uid,
       from,
-      (next) => setLedgerState({ key, value: next }),
+      (next) => setLedgerState({ key: ledgerKey, value: next }),
       () => setError("Couldn't load transactions. Check your Firestore rules."),
     );
-  }, [uid, monthTime, historyMonths]);
+  }, [uid, monthTime, historyMonths, allTime, ledgerKey]);
 
   useEffect(() => {
     if (!uid) return;
@@ -207,8 +227,7 @@ export function useBudget(monthStart: Date, historyPeriod: HistoryPeriod) {
   }, [uid]);
 
   const accountsReady = uid !== null && accountsState.key === uid;
-  const ledgerReady =
-    uid !== null && ledgerState.key === `${uid}:${monthTime}:${historyMonths}`;
+  const ledgerReady = uid !== null && ledgerState.key === ledgerKey;
   const goalsReady = uid !== null && goalsState.key === `${uid}:${monthTime}`;
   const profileReady = uid !== null && profileState.key === uid;
 
@@ -284,6 +303,11 @@ export function useBudget(monthStart: Date, historyPeriod: HistoryPeriod) {
   // every render would rebuild the whole history on every keystroke.
   const balancesAsOf = useMemo(() => new Date(closingTime), [closingTime]);
 
+  // The same instant as `notYet`, for the views that span more than the month
+  // on screen — a list of every month can't call next March upcoming and
+  // last March upcoming by the same cutoff.
+  const liveAsOf = useMemo(() => new Date(notYet), [notYet]);
+
   const accountsById = useMemo(
     () => Object.fromEntries(accounts.map((account) => [account.id, account])),
     [accounts],
@@ -317,6 +341,10 @@ export function useBudget(monthStart: Date, historyPeriod: HistoryPeriod) {
      * off a balance that never included them.
      */
     balancesAsOf,
+    /** Now, as the ledger reckons it: the first instant that hasn't happened. */
+    liveAsOf,
+    /** True while the whole history is subscribed rather than a year of it. */
+    allTime,
     /** Every entry dated inside the viewed month, upcoming ones included. */
     transactions,
     /** Only those that have happened — what the month's totals are built from. */

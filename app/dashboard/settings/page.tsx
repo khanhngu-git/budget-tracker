@@ -35,11 +35,11 @@ export default function SettingsPage() {
         {ready ? <ProfileSettings /> : loading}
       </Section>
 
-      <Section divided title="Appearance">
+      <Section divided id="appearance" title="Appearance">
         {ready ? <AppearanceSettings /> : loading}
       </Section>
 
-      <Section divided title="Data and privacy">
+      <Section divided id="data-and-privacy" title="Data and privacy">
         <SecuritySettings />
       </Section>
 

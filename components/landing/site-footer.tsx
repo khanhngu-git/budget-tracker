@@ -17,12 +17,20 @@ export function SiteFooter() {
 
         {/* Log in and Dashboard both live in the header, where someone
             looking for them will already be. */}
-        <Link
-          href="/about"
-          className="text-sm text-muted transition-colors hover:text-foreground"
-        >
-          About us
-        </Link>
+        <nav aria-label="More" className="flex flex-col gap-2 sm:flex-row sm:gap-6">
+          <Link
+            href="/about"
+            className="text-sm text-muted transition-colors hover:text-foreground"
+          >
+            About us
+          </Link>
+          <Link
+            href="/releases"
+            className="text-sm text-muted transition-colors hover:text-foreground"
+          >
+            Release notes
+          </Link>
+        </nav>
 
         <p className="text-sm text-muted">
           © {new Date().getFullYear()} Budget Tracker

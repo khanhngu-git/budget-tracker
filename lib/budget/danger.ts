@@ -27,7 +27,7 @@ const BATCH_LIMIT = 400;
 
 async function deleteAll(refs: DocumentReference[]): Promise<void> {
   for (let index = 0; index < refs.length; index += BATCH_LIMIT) {
-    const batch = writeBatch(db);
+    const batch = writeBatch(db());
     for (const ref of refs.slice(index, index + BATCH_LIMIT)) {
       batch.delete(ref);
     }
@@ -37,7 +37,7 @@ async function deleteAll(refs: DocumentReference[]): Promise<void> {
 
 /** The build before month-scoped plans kept goals directly under `budgets/`. */
 function legacyBudgetsPath(uid: string) {
-  return collection(db, "users", uid, "budgets");
+  return collection(db(), "users", uid, "budgets");
 }
 
 function shift(month: string, delta: number): string {

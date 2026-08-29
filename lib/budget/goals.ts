@@ -19,16 +19,16 @@ import { GOAL_SCOPES, goalId, type Goal, type GoalScope } from "./types";
  * document per goal within a month, keyed so a scope can't be budgeted twice.
  */
 export function goalsPath(uid: string, monthKey: string) {
-  return collection(db, "users", uid, "budgets", monthKey, "goals");
+  return collection(db(), "users", uid, "budgets", monthKey, "goals");
 }
 
 export function goalDoc(uid: string, monthKey: string, id: string) {
-  return doc(db, "users", uid, "budgets", monthKey, "goals", id);
+  return doc(db(), "users", uid, "budgets", monthKey, "goals", id);
 }
 
 /** Where an older build kept a single set of goals shared by every month. */
 function legacyGoalsPath(uid: string) {
-  return collection(db, "users", uid, "budgets");
+  return collection(db(), "users", uid, "budgets");
 }
 
 /** Goals by document id. */
@@ -129,7 +129,7 @@ export async function copyGoals(
   const entries = Object.values(source);
   if (entries.length === 0) return 0;
 
-  const batch = writeBatch(db);
+  const batch = writeBatch(db());
   for (const goal of entries) {
     batch.set(goalDoc(uid, toMonthKey, goal.id), {
       scope: goal.scope,
@@ -159,7 +159,7 @@ export async function migrateLegacyGoals(
 
   const goals = Object.values(collect(legacy.docs));
   const existing = await readGoals(uid, intoMonthKey);
-  const batch = writeBatch(db);
+  const batch = writeBatch(db());
 
   // Only seed the month if it has no plan of its own — a migration must never
   // overwrite something the user has already set up here.

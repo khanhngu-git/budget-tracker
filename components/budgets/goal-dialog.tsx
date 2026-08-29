@@ -13,6 +13,7 @@ import {
   formatPercent,
   parseAmountToCents,
 } from "@/lib/budget/format";
+import { writeErrorMessage } from "@/lib/budget/error";
 import { setGoal, type GoalMap } from "@/lib/budget/goals";
 import { goalId, type Goal, type GoalScope } from "@/lib/budget/types";
 import { SCOPE_REQUIREMENT } from "@/lib/budget/scopes";
@@ -190,8 +191,10 @@ export function GoalDialog({
         amountCents,
       );
       onClose();
-    } catch {
-      setError("Couldn't save that goal. Please try again.");
+    } catch (caught) {
+      setError(
+        writeErrorMessage(caught, "Couldn't save that goal. Please try again."),
+      );
       setPending(false);
     }
   }
