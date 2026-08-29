@@ -183,7 +183,7 @@ export async function addEntryWithSchedule(
 
   const ruleRef = doc(recurringPath(uid));
 
-  await runTransaction(db, async (tx) => {
+  await runTransaction(db(), async (tx) => {
     await addEntriesInTransaction(tx, uid, [entry], { recurringId: ruleRef.id });
     tx.set(ruleRef, {
       ...documentFor(input),
@@ -306,7 +306,7 @@ async function runRule(
   ruleId: string,
   now: Date,
 ): Promise<number> {
-  return runTransaction(db, async (tx) => {
+  return runTransaction(db(), async (tx) => {
     const ref = recurringDoc(uid, ruleId);
     const snapshot = await tx.get(ref);
     if (!snapshot.exists()) return 0;

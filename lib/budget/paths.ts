@@ -11,21 +11,21 @@ import { db } from "@/lib/firebase/client";
  */
 
 export function accountsPath(uid: string) {
-  return collection(db, "users", uid, "accounts");
+  return collection(db(), "users", uid, "accounts");
 }
 
 export function accountDoc(uid: string, accountId: string) {
-  return doc(db, "users", uid, "accounts", accountId);
+  return doc(db(), "users", uid, "accounts", accountId);
 }
 
 export function transactionsPath(uid: string) {
-  return collection(db, "users", uid, "transactions");
+  return collection(db(), "users", uid, "transactions");
 }
 
 export function recurringPath(uid: string) {
-  return collection(db, "users", uid, "recurring");
+  return collection(db(), "users", uid, "recurring");
 }
 
 export function recurringDoc(uid: string, ruleId: string) {
-  return doc(db, "users", uid, "recurring", ruleId);
+  return doc(db(), "users", uid, "recurring", ruleId);
 }
