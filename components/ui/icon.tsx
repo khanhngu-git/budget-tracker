@@ -412,6 +412,47 @@ const PATHS = {
       <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
     </>
   ),
+  glass: (
+    <>
+      <path d="M6 3.5h12l-1.2 5.2a5 5 0 0 1-4.8 3.8 5 5 0 0 1-4.8-3.8z" />
+      <path d="M12 12.5V20" />
+      <path d="M8.5 20h7" />
+    </>
+  ),
+  chevronDown: <path d="M5.5 9 12 15.5 18.5 9" />,
+  /* Six dots: the conventional "pick me up and move me" affordance. */
+  grip: (
+    <>
+      <circle cx="9" cy="6" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="6" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="12" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="12" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="18" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="18" r="1.3" fill="currentColor" stroke="none" />
+    </>
+  ),
+  calculator: (
+    <>
+      <rect x="4" y="2.5" width="16" height="19" rx="2" />
+      <path d="M7.5 6.5h9" />
+      <path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01M8 15.5h.01M12 15.5h.01M16 15.5h.01M8 18.5h.01M12 18.5h.01M16 18.5h.01" />
+    </>
+  ),
+  userPlus: (
+    <>
+      <circle cx="10" cy="8" r="3.8" />
+      <path d="M3.5 20.5v-1a5 5 0 0 1 5-5h3a5 5 0 0 1 4 2" />
+      <path d="M18.5 15v6M15.5 18h6" />
+    </>
+  ),
+  users: (
+    <>
+      <circle cx="9.5" cy="8" r="3.8" />
+      <path d="M3 20.5v-1a5 5 0 0 1 5-5h3a5 5 0 0 1 5 5v1" />
+      <path d="M16.5 4.6a3.8 3.8 0 0 1 0 6.8" />
+      <path d="M18 14.6a5 5 0 0 1 3 4.6v1.3" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;
