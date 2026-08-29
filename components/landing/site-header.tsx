@@ -7,6 +7,7 @@ import { UserMenu } from "@/components/nav/user-menu";
 
 const LINKS = [
   { href: "/about", label: "About us" },
+  { href: "/releases", label: "What's new" },
   { href: "/dashboard", label: "Dashboard" },
 ] as const;
 
