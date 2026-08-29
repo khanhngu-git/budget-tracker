@@ -2,17 +2,22 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
 import { authErrorMessage } from "@/lib/auth/errors";
 import { Button } from "@/components/ui/button";
 import { AuthField, FormError } from "./auth-field";
 import { ResetPasswordDialog } from "./reset-password-dialog";
 import { GoogleButton, OrDivider } from "./google-button";
+import { SessionSwitcher } from "./session-switcher";
 
 export function LoginForm() {
   const { signIn, signInWithGoogle } = useAuth();
   const router = useRouter();
+  // Carried here by the account menu's "switch account": the address is the
+  // half of the switch the user shouldn't have to remember. It seeds the box
+  // and nothing more — the password is still theirs to type.
+  const suggestedEmail = useSearchParams().get("email") ?? "";
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   // Opened with whatever is already typed in the email box, so someone who has
@@ -59,6 +64,8 @@ export function LoginForm() {
 
   return (
     <div className="flex flex-col gap-5">
+      <SessionSwitcher />
+
       <GoogleButton
         onClick={handleGoogle}
         disabled={pending}
@@ -79,6 +86,7 @@ export function LoginForm() {
           type="email"
           autoComplete="email"
           placeholder="you@example.com"
+          defaultValue={suggestedEmail}
           disabled={pending}
           required
         />
