@@ -10,7 +10,7 @@ import { db } from "@/lib/firebase/client";
  */
 
 export function profileDoc(uid: string) {
-  return doc(db, "users", uid);
+  return doc(db(), "users", uid);
 }
 
 /* ── Currency ───────────────────────────────────────────────────────── */
