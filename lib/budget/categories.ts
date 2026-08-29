@@ -71,6 +71,7 @@ export const CATEGORIES: Category[] = [
   { id: "groceries", label: "Groceries", flow: "expense", group: "Food & drink", icon: "basket" },
   { id: "dining", label: "Dining out", flow: "expense", group: "Food & drink", icon: "cutlery" },
   { id: "coffee", label: "Coffee", flow: "expense", group: "Food & drink", icon: "coffee" },
+  { id: "drinks", label: "Drinks", flow: "expense", group: "Food & drink", icon: "glass" },
 
   { id: "fuel", label: "Petrol", flow: "expense", group: "Getting around", icon: "fuel" },
   { id: "transport", label: "Car & upkeep", flow: "expense", group: "Getting around", icon: "car" },

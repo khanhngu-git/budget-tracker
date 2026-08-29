@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Icon } from "@/components/ui/icon";
+import { SWEEP_CLASS, sweepStyle, useSweep } from "@/components/ui/ring-sweep";
 import { expensesByCategory } from "@/lib/budget/analytics";
 import { formatMoney, formatPercent } from "@/lib/budget/format";
 import { SERIES_SLOTS, seriesColor, type Transaction } from "@/lib/budget/types";
@@ -13,6 +14,10 @@ import { SERIES_SLOTS, seriesColor, type Transaction } from "@/lib/budget/types"
  * every slice is a fraction *of* and otherwise has to be printed somewhere
  * else. Slices are ordered largest-first from twelve o'clock, so rank is read
  * clockwise without comparing angles.
+ *
+ * The ring draws itself as one clockwise sweep from twelve o'clock, a slice at
+ * a time, which is the same motion the Overview's allocation ring uses — both
+ * take it from `ring-sweep`.
  *
  * Colour is the app's existing categorical order — fixed slots, assigned by
  * rank position and never cycled. Past the eighth the identity channel is
@@ -42,11 +47,7 @@ export function ExpensePie({
   loading: boolean;
 }) {
   const [active, setActive] = useState<string | null>(null);
-  // Drawn at zero on the first frame and grown to full on the next, so the
-  // ring sweeps in rather than appearing. Reduced motion needs no branch: the
-  // transition is switched off in CSS, so the same state change lands it fully
-  // drawn on that frame.
-  const [grown, setGrown] = useState(false);
+  const swept = useSweep();
 
   const rows = expensesByCategory(transactions);
   const totalCents = rows.reduce((sum, row) => sum + row.amountCents, 0);
@@ -87,11 +88,6 @@ export function ExpensePie({
     });
   }, [rows, totalCents]);
 
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setGrown(true));
-    return () => cancelAnimationFrame(frame);
-  }, []);
-
   const focused = slices.find((slice) => slice.id === active) ?? null;
 
   return (
@@ -122,7 +118,10 @@ export function ExpensePie({
             >
               {slices.map((slice) => {
                 const dimmed = active !== null && active !== slice.id;
-                const length = grown ? slice.share * CIRCUMFERENCE : 0;
+                // A gap of surface between neighbours, so two adjacent slices
+                // never read as one continuous arc.
+                const full = Math.max(0, slice.share * CIRCUMFERENCE - 2);
+                const length = swept ? full : 0;
 
                 return (
                   <circle
@@ -133,12 +132,13 @@ export function ExpensePie({
                     fill="none"
                     stroke={slice.color}
                     strokeWidth={dimmed ? 16 : 20}
-                    // A gap of surface between neighbours, so two adjacent
-                    // slices never read as one continuous arc.
-                    strokeDasharray={`${Math.max(0, length - 2)} ${CIRCUMFERENCE}`}
+                    strokeDasharray={`${length} ${CIRCUMFERENCE}`}
                     strokeDashoffset={-slice.offset * CIRCUMFERENCE}
                     opacity={dimmed ? 0.35 : 1}
-                    className="transition-[stroke-dasharray,stroke-width,opacity] duration-700 ease-out motion-reduce:transition-none"
+                    // Waits for the slices before it, then takes its own share
+                    // of the turn — one hand sweeping, not eight arcs growing.
+                    style={sweepStyle(slice.share, slice.offset)}
+                    className={SWEEP_CLASS}
                     onMouseEnter={() => setActive(slice.id)}
                     onMouseLeave={() => setActive(null)}
                   />
