@@ -14,11 +14,13 @@ import { RecurringManager } from "@/components/dashboard/recurring-manager";
 import { TransactionDialog } from "@/components/dashboard/transaction-dialog";
 import { TransactionList } from "@/components/dashboard/transaction-list";
 import { summariseMonth } from "@/lib/budget/analytics";
+import { isUpcoming } from "@/lib/budget/ledger";
 import { useBudgetContext } from "@/lib/budget/budget-context";
 import {
   formatMonthLabel,
   formatMoney,
   formatSignedMoney,
+  startOfMonth,
 } from "@/lib/budget/format";
 import type {
   RecurringRule,
@@ -45,7 +47,11 @@ function TransactionsView() {
     accountsById,
     transactions,
     settledTransactions,
+    ledger,
     balancesAsOf,
+    liveAsOf,
+    searchAllMonths,
+    setSearchAllMonths,
     recurring,
     recurringLoading,
     loading,
@@ -71,6 +77,23 @@ function TransactionsView() {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<TransactionKind | "">("");
 
+  /**
+   * The pool being searched: this month, or the whole history.
+   *
+   * All-months widens the Firestore subscription rather than filtering harder,
+   * because the entry you can't find is by definition the one outside the
+   * window — a search that could only ever match what was already loaded is
+   * the bug, not the feature. It stays on until turned off, so paging months
+   * doesn't silently re-narrow it.
+   */
+  const pool = searchAllMonths ? ledger : transactions;
+  // Every month has its own cutoff for "hasn't happened yet"; a list spanning
+  // all of them has exactly one, which is now.
+  const asOf = searchAllMonths ? liveAsOf : balancesAsOf;
+  const settledPool = searchAllMonths
+    ? ledger.filter((entry) => !isUpcoming(entry, liveAsOf.getTime()))
+    : settledTransactions;
+
   const term = query.trim().toLowerCase();
   const matches = (entry: Transaction) => {
     if (focused && entry.accountId !== focused.id && entry.toAccountId !== focused.id) {
@@ -93,29 +116,55 @@ function TransactionsView() {
     return haystack.includes(term);
   };
 
-  const visible = transactions.filter(matches);
-  const filtering = term !== "" || kind !== "" || focused !== null;
+  const visible = pool.filter(matches);
+  const filtering =
+    term !== "" || kind !== "" || focused !== null || searchAllMonths;
 
   // Built from what has actually happened. A bill dated for the 30th is in
   // the list below but not in this line: it hasn't been paid yet, and a net
   // that already counted it would be answering a different question.
-  const visibleSettled = settledTransactions.filter(matches);
+  const visibleSettled = settledPool.filter(matches);
   const { incomeCents, expenseCents, netCents } = summariseMonth(visibleSettled);
   const upcomingCount = visible.length - visibleSettled.length;
   const monthLabel = formatMonthLabel(monthStart);
 
+  /**
+   * What the narrow option is called.
+   *
+   * "Current month" whenever the month on screen is the present one, which is
+   * how people read a filter and how it reads for all but a few clicks of any
+   * session. It can't be the label unconditionally, though: the month switcher
+   * really does move this view to July, and a control offering to search the
+   * "current month" while searching July would be stating something false.
+   */
+  const viewingNow =
+    monthStart.getTime() === startOfMonth(new Date()).getTime();
+  const scopeLabel = viewingNow ? "Current month" : monthLabel;
+
   return (
     <>
       <Section
-        title={focused ? `${focused.name} in ${monthLabel}` : `Everything in ${monthLabel}`}
+        title={
+          searchAllMonths
+            ? focused
+              ? `${focused.name}, every month`
+              : "Every entry, every month"
+            : focused
+              ? `${focused.name} in ${monthLabel}`
+              : `Everything in ${monthLabel}`
+        }
         // This page is the ledger, not a dashboard. The month's shape belongs
         // on Statistics, where there's room to explain it; here it's one line
         // so the entries start as high up the page as possible.
         subtitle={
           visible.length === 0 ? (
             focused
-              ? `Nothing recorded against ${focused.name} this month.`
-              : "Nothing recorded this month."
+              ? `Nothing recorded against ${focused.name}${
+                  searchAllMonths ? " at all." : " this month."
+                }`
+              : searchAllMonths
+                ? "Nothing recorded yet."
+                : "Nothing recorded this month."
           ) : (
             <>
               {visible.length} {visible.length === 1 ? "entry" : "entries"} ·{" "}
@@ -191,6 +240,20 @@ function TransactionsView() {
             />
           </div>
 
+          {/* Where to look, before what to look for. Named as the two places
+              it can be rather than as a checkbox nobody would find: "search
+              everything" is a mode, and the heading above changes with it. */}
+          <Select
+            aria-label="Months to search"
+            value={searchAllMonths ? "all" : "month"}
+            options={[
+              { value: "month", label: scopeLabel, icon: "receipt" },
+              { value: "all", label: "All months", icon: "search" },
+            ]}
+            onChange={(next) => setSearchAllMonths(next === "all")}
+            className="sm:w-44"
+          />
+
           <Select
             aria-label="Filter by kind"
             value={kind}
@@ -210,8 +273,9 @@ function TransactionsView() {
         {filtering ? (
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="text-muted">
-              {visible.length} of {transactions.length}{" "}
-              {transactions.length === 1 ? "entry" : "entries"}
+              {visible.length} of {pool.length}{" "}
+              {pool.length === 1 ? "entry" : "entries"}
+              {searchAllMonths ? " across every month" : null}
               {focused ? (
                 <>
                   {" "}
@@ -227,6 +291,7 @@ function TransactionsView() {
               onClick={() => {
                 setQuery("");
                 setKind("");
+                setSearchAllMonths(false);
               }}
               className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-muted hover:text-foreground"
             >
@@ -248,9 +313,14 @@ function TransactionsView() {
         <TransactionList
           uid={uid}
           transactions={visible}
-          asOf={balancesAsOf}
+          asOf={asOf}
           accounts={accountsById}
           loading={loading}
+          emptyTitle={
+            searchAllMonths
+              ? "Nothing recorded yet"
+              : "Nothing recorded this month"
+          }
           onEdit={(transaction) => setDialog({ transaction })}
         />
       </Section>

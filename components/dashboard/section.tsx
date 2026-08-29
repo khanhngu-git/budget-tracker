@@ -9,12 +9,15 @@ import type { ReactNode } from "react";
  * extra air above it.
  */
 export function Section({
+  id,
   title,
   subtitle,
   action,
   divided = false,
   children,
 }: {
+  /** Anchor, for links that point at one band of a page. */
+  id?: string;
   title: string;
   /** Takes a node, not just text, so a figure inside it can carry a tone. */
   subtitle?: ReactNode;
@@ -24,7 +27,8 @@ export function Section({
 }) {
   return (
     <section
-      className={`flex flex-col gap-4 ${
+      id={id}
+      className={`scroll-mt-6 flex flex-col gap-4 ${
         divided ? "border-t border-border pt-8" : ""
       }`}
     >
